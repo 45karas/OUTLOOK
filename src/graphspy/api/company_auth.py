@@ -464,19 +464,114 @@ def outlook_messages():
     if not row:
         return {"error": "No active Microsoft token. Connect Outlook first."}, 401
 
-    top = request.args.get("top", "50")
+    top_raw = request.args.get("top", "100")
+    try:
+        top = max(1, min(int(top_raw), 100))
+    except ValueError:
+        top = 100
     folder_id = request.args.get("folder_id", "").strip()
     folder_path = (
         f"/me/mailFolders/{quote(folder_id, safe='')}/messages"
         if folder_id
         else "/me/messages"
     )
+    select_fields = ",".join(
+        [
+            "id",
+            "subject",
+            "sender",
+            "from",
+            "toRecipients",
+            "ccRecipients",
+            "receivedDateTime",
+            "sentDateTime",
+            "lastModifiedDateTime",
+            "bodyPreview",
+            "body",
+            "isRead",
+            "hasAttachments",
+            "importance",
+            "webLink",
+            "parentFolderId",
+        ]
+    )
     uri = (
         f"{GRAPH_BASE_URL}{folder_path}"
         "?$orderby=receivedDateTime desc"
         f"&$top={top}"
-        "&$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview,body,isRead,hasAttachments,importance,webLink"
+        f"&$select={select_fields}"
     )
+    headers = {
+        "Authorization": f"Bearer {row[0]}",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.get(
+            uri,
+            headers=headers,
+            timeout=30,
+        )
+    except requests.RequestException:
+        return {"error": "DollarHub could not reach Microsoft Graph. Try again."}, 502
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"error": response.text or "Microsoft Graph returned an unreadable response."}
+
+    if response.status_code >= 400:
+        error_key, message = friendly_graph_error(payload if isinstance(payload, dict) else {})
+        return {"error": message, "error_key": error_key}, response.status_code
+    if request.args.get("all") == "1" and isinstance(payload, dict):
+        values = payload.get("value", [])
+        next_link = payload.get("@odata.nextLink")
+        page_count = 1
+        while next_link and len(values) < 500 and page_count < 6:
+            try:
+                next_response = requests.get(next_link, headers=headers, timeout=30)
+                next_payload = next_response.json()
+            except (requests.RequestException, ValueError):
+                break
+            if next_response.status_code >= 400:
+                break
+            values.extend(next_payload.get("value", []))
+            next_link = next_payload.get("@odata.nextLink")
+            page_count += 1
+        payload["value"] = values
+        payload["dollarhubLoadedCount"] = len(values)
+    return payload
+
+
+@bp.get("/api/outlook/message/<path:message_id>")
+def outlook_message(message_id):
+    requested_token_id = request.args.get("token_id", "").strip()
+    access_token_id = int(requested_token_id) if requested_token_id.isdigit() else active_access_token_id()
+    if not access_token_exists(access_token_id):
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+    row = access_token_row(access_token_id)
+    if not row:
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+    select_fields = ",".join(
+        [
+            "id",
+            "subject",
+            "sender",
+            "from",
+            "replyTo",
+            "toRecipients",
+            "ccRecipients",
+            "receivedDateTime",
+            "sentDateTime",
+            "bodyPreview",
+            "body",
+            "isRead",
+            "hasAttachments",
+            "importance",
+            "webLink",
+            "parentFolderId",
+        ]
+    )
+    uri = f"{GRAPH_BASE_URL}/me/messages/{quote(message_id, safe='')}?$select={select_fields}"
     try:
         response = requests.get(
             uri,
@@ -488,12 +583,10 @@ def outlook_messages():
         )
     except requests.RequestException:
         return {"error": "DollarHub could not reach Microsoft Graph. Try again."}, 502
-
     try:
         payload = response.json()
     except ValueError:
         payload = {"error": response.text or "Microsoft Graph returned an unreadable response."}
-
     if response.status_code >= 400:
         error_key, message = friendly_graph_error(payload if isinstance(payload, dict) else {})
         return {"error": message, "error_key": error_key}, response.status_code

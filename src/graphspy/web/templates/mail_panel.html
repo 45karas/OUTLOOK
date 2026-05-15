@@ -280,6 +280,7 @@
             <div class="top-actions">
                 <select class="account-select" id="account-select"></select>
                 <button class="btn" id="refresh-mail" type="button">Refresh</button>
+                <span class="muted" id="refresh-status">Auto refresh on</span>
             </div>
         </header>
 
@@ -369,13 +370,44 @@
         let folders = [];
         let messages = [];
         let selectedId = null;
+        let isLoadingMail = false;
+        let autoRefreshTimer = null;
 
         function escapeHtml(value) {
             return String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
         }
 
+        function emailAddressOf(person) {
+            return person?.emailAddress?.address || person?.address || '';
+        }
+
+        function emailNameOf(person) {
+            return person?.emailAddress?.name || person?.name || '';
+        }
+
         function senderName(message) {
-            return message.from?.emailAddress?.name || message.from?.emailAddress?.address || 'Unknown sender';
+            return (
+                emailNameOf(message.from)
+                || emailAddressOf(message.from)
+                || emailNameOf(message.sender)
+                || emailAddressOf(message.sender)
+                || emailNameOf(message.replyTo?.[0])
+                || emailAddressOf(message.replyTo?.[0])
+                || 'Unknown sender'
+            );
+        }
+
+        function senderAddress(message) {
+            return (
+                emailAddressOf(message.from)
+                || emailAddressOf(message.sender)
+                || emailAddressOf(message.replyTo?.[0])
+                || ''
+            );
+        }
+
+        function subjectText(message) {
+            return message.subject || (message.bodyPreview ? message.bodyPreview.slice(0, 90) : '') || '(no subject)';
         }
 
         function formatDate(value) {
@@ -445,9 +477,9 @@
             if (!query) return messages;
             return messages.filter(message => [
                 senderName(message),
+                senderAddress(message),
                 message.subject,
                 message.bodyPreview,
-                message.from?.emailAddress?.address
             ].some(value => String(value || '').toLowerCase().includes(query)));
         }
 
@@ -465,7 +497,7 @@
                 row.innerHTML = `
                     <span class="from">${escapeHtml(senderName(message))}</span>
                     <span class="time">${escapeHtml(formatDate(message.receivedDateTime))}</span>
-                    <span class="subject">${escapeHtml(message.subject || '(no subject)')}</span>
+                    <span class="subject">${escapeHtml(subjectText(message))}</span>
                     <span></span>
                     <span class="preview">${escapeHtml(message.bodyPreview || '')}</span>
                 `;
@@ -474,17 +506,38 @@
             }
         }
 
-        function selectMessage(id) {
+        async function loadMessageDetails(id) {
+            try {
+                const response = await fetch(`/api/outlook/message/${encodeURIComponent(id)}?token_id=${encodeURIComponent(activeTokenId)}`);
+                const data = await response.json();
+                if (!response.ok || data.error) {
+                    return null;
+                }
+                const index = messages.findIndex(item => item.id === id);
+                if (index >= 0) {
+                    messages[index] = { ...messages[index], ...data };
+                }
+                return data;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        async function selectMessage(id) {
             selectedId = id;
-            const message = messages.find(item => item.id === id);
+            let message = messages.find(item => item.id === id);
             renderList();
             if (!message) return;
+            const fullMessage = await loadMessageDetails(id);
+            if (fullMessage) {
+                message = { ...message, ...fullMessage };
+            }
             readingPane.innerHTML = `
                 <div class="message-head">
                     <div class="muted">${escapeHtml(formatDate(message.receivedDateTime))}</div>
-                    <h1>${escapeHtml(message.subject || '(no subject)')}</h1>
-                    <div><strong>From:</strong> ${escapeHtml(senderName(message))} &lt;${escapeHtml(message.from?.emailAddress?.address || '')}&gt;</div>
-                    <div class="muted"><strong>To:</strong> ${escapeHtml((message.toRecipients || []).map(item => item.emailAddress?.address).filter(Boolean).join(', '))}</div>
+                    <h1>${escapeHtml(subjectText(message))}</h1>
+                    <div><strong>From:</strong> ${escapeHtml(senderName(message))} &lt;${escapeHtml(senderAddress(message))}&gt;</div>
+                    <div class="muted"><strong>To:</strong> ${escapeHtml((message.toRecipients || []).map(item => emailAddressOf(item)).filter(Boolean).join(', '))}</div>
                     ${message.webLink ? `<p><a class="btn" target="_blank" rel="noreferrer" href="${escapeHtml(message.webLink)}">Open in Outlook</a></p>` : ''}
                 </div>
                 <iframe id="message-frame" class="message-frame" sandbox=""></iframe>
@@ -527,20 +580,32 @@
         }
 
         async function loadMail() {
-            mailList.innerHTML = '<div class="empty">Loading emails...</div>';
+            if (isLoadingMail) return;
+            isLoadingMail = true;
+            const refreshStatus = document.getElementById('refresh-status');
+            refreshStatus.textContent = 'Refreshing...';
+            if (!messages.length) {
+                mailList.innerHTML = '<div class="empty">Loading emails...</div>';
+            }
             try {
                 const folderQuery = activeFolderId ? `&folder_id=${encodeURIComponent(activeFolderId)}` : '';
-                const response = await fetch(`/api/outlook/messages?top=75&token_id=${encodeURIComponent(activeTokenId)}${folderQuery}`);
+                const allQuery = activeFolderId ? '' : '&all=1';
+                const response = await fetch(`/api/outlook/messages?top=100&token_id=${encodeURIComponent(activeTokenId)}${folderQuery}${allQuery}`);
                 const data = await response.json();
                 if (!response.ok || data.error) {
                     throw new Error(data.error?.message || data.error || 'Unable to load mailbox');
                 }
+                const previousSelectedId = selectedId;
                 messages = data.value || [];
-                selectedId = messages[0]?.id || null;
+                selectedId = messages.some(message => message.id === previousSelectedId) ? previousSelectedId : messages[0]?.id || null;
                 renderList();
-                if (selectedId) selectMessage(selectedId);
+                if (selectedId) await selectMessage(selectedId);
+                refreshStatus.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
             } catch (error) {
                 showError(error.message);
+                refreshStatus.textContent = 'Refresh failed';
+            } finally {
+                isLoadingMail = false;
             }
         }
 
@@ -606,6 +671,10 @@
             }
         });
         reloadAll();
+        autoRefreshTimer = setInterval(() => {
+            if (document.hidden || document.getElementById('compose-panel').style.display === 'block') return;
+            loadMail();
+        }, 60000);
     </script>
 </body>
 </html>
