@@ -24,6 +24,68 @@ DEFAULT_SCOPES = "openid profile User.Read Mail.Read Mail.ReadWrite Mail.Send"
 GRAPH_SCOPES = "https://graph.microsoft.com/User.Read https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send"
 DEFAULT_PUBLIC_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
+PERMISSION_GROUPS = [
+    {
+        "name": "Profile",
+        "scopes": ["User.Read"],
+        "features": "Profile, photo, manager, people basics",
+    },
+    {
+        "name": "Outlook Mail",
+        "scopes": ["Mail.Read", "Mail.ReadWrite", "Mail.Send"],
+        "features": "Folders, inbox, read, update, send",
+    },
+    {
+        "name": "Outlook Calendar",
+        "scopes": ["Calendars.Read", "Calendars.ReadWrite"],
+        "features": "Events, calendars, meeting management",
+    },
+    {
+        "name": "Contacts",
+        "scopes": ["Contacts.Read", "Contacts.ReadWrite", "People.Read"],
+        "features": "Contacts and people",
+    },
+    {
+        "name": "OneDrive / Excel / OneNote",
+        "scopes": ["Files.Read", "Files.ReadWrite", "Files.Read.All", "Files.ReadWrite.All", "Notes.ReadWrite.All"],
+        "features": "Drive files, Excel files, OneNote notebooks",
+    },
+    {
+        "name": "SharePoint",
+        "scopes": ["Sites.Read.All", "Sites.ReadWrite.All", "Lists.Read.All", "Lists.ReadWrite.All"],
+        "features": "Sites, pages, lists, document libraries",
+    },
+    {
+        "name": "Teams",
+        "scopes": ["Team.ReadBasic.All", "Channel.ReadBasic.All", "ChannelMessage.Read.All", "Chat.Read", "Chat.ReadWrite"],
+        "features": "Teams, channels, chats, channel messages",
+    },
+    {
+        "name": "Users / Directory",
+        "scopes": ["User.Read.All", "User.ReadWrite.All", "Directory.Read.All", "Directory.ReadWrite.All"],
+        "features": "Users, directory, organization data",
+    },
+    {
+        "name": "Groups",
+        "scopes": ["Group.Read.All", "Group.ReadWrite.All"],
+        "features": "Groups and memberships",
+    },
+    {
+        "name": "Tasks / Planner / To Do",
+        "scopes": ["Tasks.Read", "Tasks.ReadWrite", "Tasks.Read.Shared", "Tasks.ReadWrite.Shared", "Group.ReadWrite.All"],
+        "features": "To Do lists, Planner tasks",
+    },
+    {
+        "name": "Security / Compliance",
+        "scopes": ["SecurityEvents.Read.All", "SecurityEvents.ReadWrite.All", "ThreatIndicators.ReadWrite.OwnedBy"],
+        "features": "Security and compliance endpoints",
+    },
+    {
+        "name": "Search / Insights",
+        "scopes": ["ExternalItem.Read.All", "Sites.Read.All", "Files.Read.All"],
+        "features": "Search, insights, trending content",
+    },
+]
 
 
 class ManualTokenError(Exception):
@@ -31,6 +93,10 @@ class ManualTokenError(Exception):
         super().__init__(message)
         self.error_key = error_key
         self.message = message
+
+
+def permission_catalog() -> list[dict]:
+    return PERMISSION_GROUPS
 
 
 def oauth_configured() -> bool:

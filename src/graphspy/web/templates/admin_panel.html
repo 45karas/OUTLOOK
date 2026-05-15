@@ -18,6 +18,14 @@
     .token-guide ol { margin: 0; padding-left: 1.25rem; }
     .token-guide li { margin: .35rem 0; }
     .token-guide code { color: #f0abfc; }
+    .permissions-panel { background: #172338; border: 1px solid rgba(148, 163, 184, .14); border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; }
+    .permissions-panel h2 { font-size: 1.05rem; font-weight: 850; margin: 0 0 .25rem; }
+    .permissions-panel p { color: #8f9bb2; margin: 0 0 1rem; }
+    .permission-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .75rem; }
+    .permission-card { border: 1px solid rgba(148, 163, 184, .14); background: rgba(15, 23, 42, .42); border-radius: 10px; padding: .85rem; }
+    .permission-card strong { display: block; color: #f8fafc; margin-bottom: .35rem; }
+    .scope-list { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .65rem; }
+    .scope-pill { font-size: .72rem; color: #bfdbfe; background: rgba(37, 99, 235, .14); border: 1px solid rgba(96, 165, 250, .22); border-radius: 999px; padding: .18rem .45rem; }
     .mailbox-card, .connect-card { background: #1c2739; border: 1px solid rgba(148, 163, 184, .14); border-radius: 14px; box-shadow: 0 18px 45px rgba(0,0,0,.16); }
     .connect-card { padding: 1.25rem; margin-bottom: 1rem; }
     .connect-card[hidden] { display: none; }
@@ -99,6 +107,24 @@
         Automatic Microsoft login needs a Microsoft App Registration that supports the accounts your customers use. For all Outlook and Office 365 customers, set the app to support personal Microsoft accounts and work/school accounts, then use tenant <strong>common</strong>.
     </div>
     {% endif %}
+
+    <section class="permissions-panel">
+        <h2>DollarHub Graph Permission Map</h2>
+        <p>DollarHub can only use permissions already present in the token you paste. Add these in Graph Explorer or through a Microsoft app consent flow, then paste a fresh token.</p>
+        <div class="permission-grid">
+            {% for group in permission_groups %}
+            <article class="permission-card">
+                <strong>{{ group.name }}</strong>
+                <div class="auto-label">{{ group.features }}</div>
+                <div class="scope-list">
+                    {% for scope in group.scopes %}
+                    <span class="scope-pill">{{ scope }}</span>
+                    {% endfor %}
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </section>
 
     <section class="connect-card" id="connect-card" {% if accounts %}hidden{% endif %}>
         <form method="post" action="{{ url_for('company_auth.connect_token') }}" class="row g-3">

@@ -4,7 +4,7 @@
 import os
 
 # Local library imports
-from ..api.company_auth import oauth_configured
+from ..api.company_auth import oauth_configured, permission_catalog
 from ..db import connection
 
 # External library imports
@@ -38,6 +38,7 @@ def admin():
         accounts=accounts,
         error=request.args.get("error", ""),
         oauth_ready=oauth_configured(),
+        permission_groups=permission_catalog(),
     )
 
 
