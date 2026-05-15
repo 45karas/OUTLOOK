@@ -694,7 +694,10 @@
                 selectedId = messages.some(message => message.id === previousSelectedId) ? previousSelectedId : messages[0]?.id || null;
                 renderList();
                 if (selectedId) await selectMessage(selectedId);
-                refreshStatus.textContent = `Loaded ${messages.length} - Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+                const warning = (data.dollarhubWarnings || [])[0];
+                const partial = data.dollarhubPartial ? 'partial ' : '';
+                refreshStatus.textContent = `${partial}Loaded ${messages.length} - Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+                actionStatus.textContent = warning ? cleanError(warning) : '';
             } catch (error) {
                 showError(error.message);
                 refreshStatus.textContent = 'Refresh failed';
@@ -707,7 +710,12 @@
             try {
                 await loadAccounts();
                 if (!activeTokenId) return;
-                await loadFolders();
+                try {
+                    await loadFolders();
+                } catch (folderError) {
+                    folderList.innerHTML = '<div class="muted" style="padding:.75rem">Folders could not load, but mail will still open.</div>';
+                    actionStatus.textContent = cleanError(folderError.message);
+                }
                 await loadMail();
             } catch (error) {
                 showError(error.message);

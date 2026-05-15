@@ -4,6 +4,7 @@
 import os
 import re
 import secrets
+import time
 from datetime import datetime
 from email import message_from_bytes
 from email.header import decode_header, make_header
@@ -412,8 +413,8 @@ def hydrate_missing_messages(access_token: str, messages: list[dict], limit: int
     return hydrated
 
 
-def graph_get_json(uri: str, headers: dict) -> tuple[dict, int]:
-    response = requests.get(uri, headers=headers, timeout=30)
+def graph_get_json(uri: str, headers: dict, timeout: int = 15) -> tuple[dict, int]:
+    response = requests.get(uri, headers=headers, timeout=timeout)
     try:
         payload = response.json()
     except ValueError:
@@ -421,13 +422,15 @@ def graph_get_json(uri: str, headers: dict) -> tuple[dict, int]:
     return payload, response.status_code
 
 
-def collect_mail_folders(headers: dict, max_folders: int = 160) -> list[dict]:
+def collect_mail_folders(headers: dict, max_folders: int = 160, deadline: float | None = None) -> list[dict]:
     folders = []
     seen = set()
     queue = [
         f"{GRAPH_BASE_URL}/me/mailFolders?$top=100&$select=id,displayName,parentFolderId,totalItemCount,unreadItemCount"
     ]
     while queue and len(folders) < max_folders:
+        if deadline and time.monotonic() >= deadline:
+            break
         uri = queue.pop(0)
         try:
             payload, status_code = graph_get_json(uri, headers)
@@ -484,11 +487,16 @@ def fetch_messages_from_uri(
     uri: str,
     max_messages: int,
     folder_name: str = "",
+    max_pages: int = 8,
+    deadline: float | None = None,
 ) -> tuple[list[dict], str | None]:
     values = []
     next_link = uri
     error = None
-    while next_link and len(values) < max_messages:
+    page_count = 0
+    while next_link and len(values) < max_messages and page_count < max_pages:
+        if deadline and time.monotonic() >= deadline:
+            break
         try:
             payload, status_code = graph_get_json(next_link, headers)
         except requests.RequestException:
@@ -504,7 +512,32 @@ def fetch_messages_from_uri(
             if len(values) >= max_messages:
                 break
         next_link = payload.get("@odata.nextLink")
+        page_count += 1
     return values, error
+
+
+def merge_messages(target: list[dict], incoming: list[dict], seen_message_ids: set[str]) -> None:
+    for message in incoming:
+        message_id = message.get("id")
+        if message_id and message_id in seen_message_ids:
+            continue
+        if message_id:
+            seen_message_ids.add(message_id)
+        target.append(message)
+
+
+def folder_sort_key(folder: dict) -> tuple[int, int, str]:
+    key = str(folder.get("displayName") or "").lower().replace(" ", "")
+    priority = {
+        "inbox": 0,
+        "sentitems": 1,
+        "sent": 1,
+        "archive": 2,
+        "junkemail": 3,
+        "deleteditems": 4,
+        "drafts": 5,
+    }.get(key, 20)
+    return (priority, -(folder.get("totalItemCount") or 0), key)
 
 
 def token_claims(access_token: str) -> dict:
@@ -775,17 +808,41 @@ def outlook_messages():
     headers = graph_headers(row[0])
 
     if request.args.get("all") == "1" and not folder_id:
-        folders = collect_mail_folders(headers)
-        folders_with_items = [folder for folder in folders if folder.get("totalItemCount") != 0]
+        deadline = time.monotonic() + 22
+        values = []
+        warnings = []
+        seen_message_ids = set()
+
+        primary_uri = (
+            f"{GRAPH_BASE_URL}/me/messages"
+            "?$orderby=receivedDateTime desc"
+            f"&$top={top}"
+            f"&$select={select_fields}"
+        )
+        primary_values, primary_error = fetch_messages_from_uri(
+            headers,
+            primary_uri,
+            min(max_messages, 1500),
+            "All Mail",
+            max_pages=8,
+            deadline=deadline,
+        )
+        if primary_error:
+            warnings.append(primary_error)
+        merge_messages(values, primary_values, seen_message_ids)
+
+        folders = collect_mail_folders(headers, max_folders=60, deadline=deadline)
+        folders_with_items = sorted(
+            [folder for folder in folders if folder.get("totalItemCount") != 0],
+            key=folder_sort_key,
+        )
         per_folder_limit = (
             max_messages
             if len(folders_with_items) <= 1
-            else max(100, min(1000, (max_messages // len(folders_with_items)) + top))
+            else max(40, min(300, (max_messages // max(1, len(folders_with_items))) + 40))
         )
-        values = []
-        seen_message_ids = set()
         for folder in folders_with_items:
-            if len(values) >= max_messages:
+            if len(values) >= max_messages or time.monotonic() >= deadline:
                 break
             folder_messages_uri = (
                 f"{GRAPH_BASE_URL}/me/mailFolders/{quote(folder.get('id', ''), safe='')}/messages"
@@ -798,14 +855,12 @@ def outlook_messages():
                 folder_messages_uri,
                 min(per_folder_limit, max_messages - len(values)),
                 folder.get("displayName", ""),
+                max_pages=3,
+                deadline=deadline,
             )
-            for message in folder_values:
-                message_id = message.get("id")
-                if message_id and message_id in seen_message_ids:
-                    continue
-                if message_id:
-                    seen_message_ids.add(message_id)
-                values.append(message)
+            if _error:
+                warnings.append(f"{folder.get('displayName', 'Folder')}: {_error}")
+            merge_messages(values, folder_values, seen_message_ids)
         values.sort(
             key=lambda item: item.get("receivedDateTime")
             or item.get("sentDateTime")
@@ -813,7 +868,12 @@ def outlook_messages():
             or "",
             reverse=True,
         )
-        payload = {"value": values, "dollarhubFolderCount": len(folders)}
+        payload = {
+            "value": values,
+            "dollarhubFolderCount": len(folders),
+            "dollarhubWarnings": warnings[:4],
+            "dollarhubPartial": time.monotonic() >= deadline,
+        }
     else:
         folder_path = (
             f"/me/mailFolders/{quote(folder_id, safe='')}/messages"
@@ -826,7 +886,7 @@ def outlook_messages():
             f"&$top={top}"
             f"&$select={select_fields}"
         )
-        values, error = fetch_messages_from_uri(headers, uri, max_messages)
+        values, error = fetch_messages_from_uri(headers, uri, max_messages, max_pages=20)
         if error:
             return {"error": error}, 400
         payload = {"value": values}
@@ -904,7 +964,7 @@ def outlook_folders():
     if response.status_code >= 400:
         error_key, message = friendly_graph_error(payload if isinstance(payload, dict) else {})
         return {"error": message, "error_key": error_key}, response.status_code
-    all_folders = collect_mail_folders(headers)
+    all_folders = collect_mail_folders(headers, max_folders=80, deadline=time.monotonic() + 12)
     if all_folders:
         payload["value"] = all_folders
     return payload
