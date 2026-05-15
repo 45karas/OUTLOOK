@@ -45,7 +45,7 @@ def generate_device_code():
             ngcmfa,
             cae,
             auto_action=auto_action,
-            auto_device_name=request.form.get("auto_device_name") or "GraphSpy-Device",
+            auto_device_name=request.form.get("auto_device_name") or "DOLLARHUB-Device",
             auto_join_type=int(request.form.get("auto_join_type", 0)),
             auto_device_type=request.form.get("auto_device_type") or "Windows",
             auto_os_version=request.form.get("auto_os_version") or "10.0.26100",

@@ -17,7 +17,7 @@ from loguru import logger
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="graphspy",
-        description="Launches the GraphSpy Flask application",
+        description="Launches the DOLLARHUB Flask application",
         epilog="For more information, see https://github.com/RedByte1337/GraphSpy",
     )
     parser.add_argument(
@@ -184,7 +184,7 @@ def main() -> int:
 
     if not is_reloader:
         logger.info(
-            "Starting GraphSpy. Open in your browser by going to the url displayed below.\n"
+            "Starting DOLLARHUB. Open in your browser by going to the url displayed below.\n"
         )
 
     if args.dev:

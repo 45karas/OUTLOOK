@@ -494,13 +494,13 @@ def add_graphspy_otp(access_token_id: int, description: str = "") -> str | None:
         )
         return secret_key
     except Exception:
-        logger.exception("An error occurred when trying to add GraphSpy OTP.")
+        logger.exception("An error occurred when trying to add DOLLARHUB OTP.")
         return None
 
 
 def add_security_key(
     access_token_id: int,
-    key_description: str = "GraphSpy Key",
+    key_description: str = "DOLLARHUB Key",
     client_type: str = "Windows",
     device_pin: str | None = None,
 ):
@@ -569,11 +569,11 @@ def add_security_key(
 
             if not WindowsClient.is_available():
                 logger.error(
-                    "Windows client requested, but WindowsClient is not available! Are you sure the GraphSpy server is running on a compatible Windows device?"
+                    "Windows client requested, but WindowsClient is not available! Are you sure the DOLLARHUB server is running on a compatible Windows device?"
                 )
                 return create_response(
                     400,
-                    "Windows client requested, but WindowsClient is not available! Are you sure the GraphSpy server is running on a compatible Windows device?",
+                    "Windows client requested, but WindowsClient is not available! Are you sure the DOLLARHUB server is running on a compatible Windows device?",
                 )
             client = WindowsClient(
                 client_data_collector=DefaultClientDataCollector(
@@ -586,7 +586,7 @@ def add_security_key(
             )
             return create_response(
                 400,
-                "Windows client requested, but WindowsClient is not available! Are you sure the GraphSpy server is running on a compatible Windows device?",
+                "Windows client requested, but WindowsClient is not available! Are you sure the DOLLARHUB server is running on a compatible Windows device?",
             )
     else:
         dev = next(CtapHidDevice.list_devices(), None)

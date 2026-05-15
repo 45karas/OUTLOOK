@@ -18,7 +18,7 @@ def register_device():
         return create_response(400, "No access_token_id specified.")
     device_id = device.register(
         access_token_id,
-        device_name=request.form.get("device_name") or "GraphSpy-Device",
+        device_name=request.form.get("device_name") or "DOLLARHUB-Device",
         join_type=int(request.form.get("join_type", 0)),
         device_type=request.form.get("device_type") or "Windows",
         os_version=request.form.get("os_version") or "10.0.26100",
@@ -45,7 +45,7 @@ def import_device_certificate():
             device_id = certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         except Exception:
             return create_response(400, "Invalid certificate format.")
-    device_name = request.form.get("device_name") or "GraphSpy-Device"
+    device_name = request.form.get("device_name") or "DOLLARHUB-Device"
     device_type = request.form.get("device_type") or "Windows"
     join_type = int(request.form.get("join_type", 0))
     cert_id = connection.execute_db(

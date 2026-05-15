@@ -100,8 +100,8 @@ def add_graphspy_otp():
     description = request.form.get("description", "")
     result = mfa.add_graphspy_otp(access_token_id, description)
     if not result:
-        return "[Error] Failed to add GraphSpy OTP code to account.", 400
-    return f"[Success] Added GraphSpy OTP code with secret '{result}' to account!"
+        return "[Error] Failed to add DOLLARHUB OTP code to account.", 400
+    return f"[Success] Added DOLLARHUB OTP code with secret '{result}' to account!"
 
 
 @bp.post("/api/delete_graphspy_otp")
@@ -142,7 +142,7 @@ def add_security_key():
         client_type = request.form.get("client_type")
         if not client_type:
             return "[Error] No client_type specified.", 400
-        description = request.form.get("description") or "GraphSpy Key"
+        description = request.form.get("description") or "DOLLARHUB Key"
         device_pin = request.form.get("device_pin", "")
         return mfa.add_security_key(
             access_token_id, description, client_type, device_pin

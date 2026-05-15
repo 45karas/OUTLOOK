@@ -47,7 +47,7 @@ def generate_public_key_rsa_blob(public_key) -> bytes:
 
 def register(
     access_token_id: int,
-    device_name: str = "GraphSpy-Device",
+    device_name: str = "DOLLARHUB-Device",
     join_type: int = 0,
     device_type: str = "Windows",
     os_version: str = "10.0.26100",
