@@ -13,6 +13,11 @@
     .invite-head h2 { font-size: 1.05rem; margin: 0 0 .25rem; font-weight: 850; }
     .invite-head p { margin: 0; color: #8f9bb2; }
     .invite-link { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #bfdbfe; word-break: break-all; background: rgba(15, 23, 42, .65); border: 1px solid rgba(148, 163, 184, .16); border-radius: 10px; padding: .8rem; min-height: 48px; }
+    .token-guide { background: rgba(15, 23, 42, .45); border: 1px solid rgba(59, 130, 246, .2); border-radius: 12px; padding: 1rem; color: #cbd5e1; }
+    .token-guide h3 { color: #f8fafc; font-size: .98rem; font-weight: 850; margin: 0 0 .65rem; }
+    .token-guide ol { margin: 0; padding-left: 1.25rem; }
+    .token-guide li { margin: .35rem 0; }
+    .token-guide code { color: #f0abfc; }
     .mailbox-card, .connect-card { background: #1c2739; border: 1px solid rgba(148, 163, 184, .14); border-radius: 14px; box-shadow: 0 18px 45px rgba(0,0,0,.16); }
     .connect-card { padding: 1.25rem; margin-bottom: 1rem; }
     .connect-card[hidden] { display: none; }
@@ -98,6 +103,18 @@
     <section class="connect-card" id="connect-card" {% if accounts %}hidden{% endif %}>
         <form method="post" action="{{ url_for('company_auth.connect_token') }}" class="row g-3">
             <input type="hidden" name="next" value="admin">
+            <div class="col-12">
+                <div class="token-guide">
+                    <h3>Required token steps</h3>
+                    <ol>
+                        <li>Open Graph Explorer and sign in with the mailbox account.</li>
+                        <li>Go to <strong>Modify permissions</strong>, add and consent to <code>Mail.Read</code>.</li>
+                        <li>Run <code>GET https://graph.microsoft.com/v1.0/me/messages</code>.</li>
+                        <li>Open the <strong>Access token</strong> tab and copy the full token value.</li>
+                        <li>Paste that fresh token here immediately. These tokens expire quickly.</li>
+                    </ol>
+                </div>
+            </div>
             <div class="col-md-5">
                 <label class="form-label" for="customer_name">Mailbox name</label>
                 <input class="form-control" id="customer_name" name="customer_name" placeholder="anna.viands">
