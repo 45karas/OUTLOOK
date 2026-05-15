@@ -230,10 +230,11 @@ def outlook_messages():
 @bp.get("/login")
 def login():
     if not oauth_configured():
-        return redirect("/")
+        return redirect("/admin?error=oauth_not_configured")
 
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
+    session["oauth_next"] = request.args.get("next", "admin")
     params = {
         "client_id": os.environ["MS_CLIENT_ID"],
         "response_type": "code",
@@ -285,7 +286,9 @@ def callback():
 
     session["company_user"] = user
     session["company_access_token_id"] = access_token_id
-    return redirect("/mail")
+    if session.pop("oauth_next", "admin") == "mail":
+        return redirect(f"/mail?token_id={access_token_id}")
+    return redirect("/admin")
 
 
 @bp.get("/logout")

@@ -39,12 +39,21 @@
     <div class="alert-soft">Could not find that saved mailbox token. Add the customer mailbox again.</div>
     {% elif error == 'no_active_token' %}
     <div class="alert-soft">No active mailbox token yet. Add a customer mailbox token below.</div>
+    {% elif error == 'oauth_not_configured' %}
+    <div class="alert-soft">Microsoft automatic login is not configured yet. Add MS_CLIENT_ID, MS_CLIENT_SECRET, MS_TENANT_ID, MS_REDIRECT_URI, and FLASK_SECRET_KEY in Render, then redeploy.</div>
     {% endif %}
 
     <div class="top-actions">
+        <a class="btn btn-mailbox" href="{{ url_for('company_auth.login') }}?next=admin">Connect with Microsoft</a>
         <button class="btn btn-primary" type="button" onclick="document.getElementById('connect-card').toggleAttribute('hidden')">+ Add Mailbox</button>
         <a class="btn btn-outline-secondary" href="{{ url_for('pages.settings') }}">Advanced Settings</a>
     </div>
+
+    {% if not oauth_ready %}
+    <div class="alert-soft">
+        Automatic Microsoft login needs your own Microsoft App Registration. Until those Render variables are set, use Add Mailbox with a Graph Explorer token as the fallback.
+    </div>
+    {% endif %}
 
     <section class="connect-card" id="connect-card" {% if accounts %}hidden{% endif %}>
         <form method="post" action="{{ url_for('company_auth.connect_token') }}" class="row g-3">

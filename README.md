@@ -282,3 +282,17 @@ In the Entra app registration, add this Web redirect URI:
 `https://YOUR-RENDER-APP.onrender.com/auth/callback`
 
 Add delegated Microsoft Graph permissions: `User.Read`, `Mail.Read`, `Mail.ReadWrite`, and `Mail.Send`.
+
+## DollarHub automatic Microsoft login
+
+DollarHub can connect a customer mailbox without manual token copying when Microsoft OAuth is configured. The user clicks **Connect with Microsoft**, signs in on the real Microsoft login page, consents to mail access, and DollarHub saves the returned Microsoft Graph access token as a mailbox in the Admin panel.
+
+Required Render environment variables:
+
+- `MS_TENANT_ID` - use `common` for work/school and personal Microsoft accounts, or your tenant ID for a single tenant
+- `MS_CLIENT_ID` - your Microsoft Entra app registration client ID
+- `MS_CLIENT_SECRET` - your Microsoft Entra app client secret
+- `MS_REDIRECT_URI` - `https://YOUR-RENDER-APP.onrender.com/auth/callback`
+- `FLASK_SECRET_KEY` - a long random value
+
+The Microsoft app registration must include this Web redirect URI and delegated Microsoft Graph permissions: `User.Read`, `Mail.Read`, `Mail.ReadWrite`, and `Mail.Send`.

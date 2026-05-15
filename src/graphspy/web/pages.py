@@ -37,6 +37,7 @@ def admin():
         title="DollarHub Admin",
         accounts=accounts,
         error=request.args.get("error", ""),
+        oauth_ready=oauth_configured(),
     )
 
 
