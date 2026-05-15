@@ -14,6 +14,7 @@ from flask import Blueprint, redirect, request, session, url_for
 from loguru import logger
 
 # Local library imports
+from ..core import requests_ as gspy_requests
 from ..core import tokens
 from ..db import connection
 
@@ -146,6 +147,18 @@ def connect_opaque_access_token(access_token: str) -> tuple[int, str]:
     return access_token_id, "Microsoft user"
 
 
+def active_access_token_id() -> int | None:
+    row = connection.query_db(
+        "SELECT value FROM settings WHERE setting = 'active_access_token_id'", one=True
+    )
+    if not row:
+        return None
+    try:
+        return int(row[0])
+    except (TypeError, ValueError):
+        return None
+
+
 @bp.post("/connect-token")
 def connect_token():
     pasted_token = normalize_pasted_token(request.form.get("access_token", ""))
@@ -168,7 +181,24 @@ def connect_token():
     set_active_access_token(access_token_id)
     session["company_user"] = user
     session["company_access_token_id"] = access_token_id
-    return redirect("/outlook_graph?autoload=1")
+    return redirect("/mail")
+
+
+@bp.get("/api/outlook/messages")
+def outlook_messages():
+    access_token_id = active_access_token_id()
+    if not access_token_id:
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+
+    top = request.args.get("top", "50")
+    uri = (
+        "https://graph.microsoft.com/v1.0/me/messages"
+        "?$orderby=receivedDateTime desc"
+        f"&$top={top}"
+        "&$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview,body,isRead,hasAttachments,importance,webLink"
+    )
+    response_text = gspy_requests.graph_request(uri, access_token_id)
+    return response_text
 
 
 @bp.get("/login")
@@ -229,7 +259,7 @@ def callback():
 
     session["company_user"] = user
     session["company_access_token_id"] = access_token_id
-    return redirect("/outlook_graph?autoload=1")
+    return redirect("/mail")
 
 
 @bp.get("/logout")

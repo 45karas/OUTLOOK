@@ -1,0 +1,126 @@
+﻿{% extends 'layout.html'%}
+
+{% block content %}
+<style>
+    .mail-shell { height: calc(100vh - 98px); display: grid; grid-template-columns: minmax(320px, 430px) 1fr; border-top: 1px solid var(--bs-border-color); }
+    .mail-list { border-right: 1px solid var(--bs-border-color); overflow: auto; }
+    .mail-header { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--bs-border-color); }
+    .mail-row { width: 100%; border: 0; border-bottom: 1px solid var(--bs-border-color); background: transparent; color: var(--bs-body-color); padding: 1rem 1.25rem; text-align: left; display: grid; gap: .35rem; }
+    .mail-row:hover, .mail-row.active { background: var(--bs-secondary-bg); }
+    .mail-row.unread .mail-subject, .mail-row.unread .mail-from { font-weight: 800; }
+    .mail-meta { display: flex; justify-content: space-between; gap: .75rem; color: var(--bs-secondary-color); font-size: .85rem; }
+    .mail-from, .mail-subject, .mail-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mail-preview { color: var(--bs-secondary-color); }
+    .reading-pane { overflow: auto; }
+    .reading-inner { max-width: 980px; padding: 2rem; }
+    .message-body { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--bs-border-color); background: #fff; color: #1f2937; border-radius: .5rem; padding: 1.25rem; }
+    .empty-state { color: var(--bs-secondary-color); padding: 3rem 2rem; }
+    @media (max-width: 900px) { .mail-shell { height: auto; grid-template-columns: 1fr; } .mail-list { max-height: 46vh; border-right: 0; } }
+</style>
+
+<div class="mail-shell">
+    <section class="mail-list">
+        <div class="mail-header">
+            <div>
+                <h1 class="h3 mb-0">Outlook Inbox</h1>
+                <div class="text-body-secondary small" id="mail-count">Loading emails...</div>
+            </div>
+            <button class="btn btn-outline-primary" id="refresh-mail">Refresh</button>
+        </div>
+        <div id="mail-list-content">
+            <div class="empty-state">Loading your mailbox...</div>
+        </div>
+    </section>
+
+    <article class="reading-pane">
+        <div class="reading-inner" id="reading-pane-content">
+            <div class="empty-state">
+                <h2 class="h4">Select an email</h2>
+                <p>Your messages will appear here after the mailbox loads.</p>
+            </div>
+        </div>
+    </article>
+</div>
+
+<script>
+    const mailList = document.getElementById('mail-list-content');
+    const mailCount = document.getElementById('mail-count');
+    const readingPane = document.getElementById('reading-pane-content');
+    let messages = [];
+    let selectedId = null;
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
+    }
+
+    function senderName(message) {
+        return message.from?.emailAddress?.name || message.from?.emailAddress?.address || 'Unknown sender';
+    }
+
+    function formatDate(value) {
+        if (!value) return '';
+        return new Intl.DateTimeFormat([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
+    }
+
+    function renderList() {
+        mailCount.textContent = `${messages.length} emails loaded`;
+        if (!messages.length) {
+            mailList.innerHTML = '<div class="empty-state">No emails were returned. Make sure the token has Mail.Read permission.</div>';
+            return;
+        }
+        mailList.innerHTML = '';
+        for (const message of messages) {
+            const row = document.createElement('button');
+            row.className = `mail-row ${message.isRead ? '' : 'unread'} ${selectedId === message.id ? 'active' : ''}`;
+            row.innerHTML = `
+                <div class="mail-meta"><span class="mail-from">${escapeHtml(senderName(message))}</span><span>${escapeHtml(formatDate(message.receivedDateTime))}</span></div>
+                <div class="mail-subject">${escapeHtml(message.subject || '(no subject)')}</div>
+                <div class="mail-preview">${escapeHtml(message.bodyPreview || '')}</div>
+            `;
+            row.addEventListener('click', () => selectMessage(message.id));
+            mailList.appendChild(row);
+        }
+    }
+
+    function selectMessage(id) {
+        selectedId = id;
+        const message = messages.find(item => item.id === id);
+        renderList();
+        if (!message) return;
+        readingPane.innerHTML = `
+            <p class="text-primary fw-semibold text-uppercase small mb-2">${escapeHtml(formatDate(message.receivedDateTime))}</p>
+            <h2>${escapeHtml(message.subject || '(no subject)')}</h2>
+            <p class="text-body-secondary mb-1"><strong>From:</strong> ${escapeHtml(senderName(message))} &lt;${escapeHtml(message.from?.emailAddress?.address || '')}&gt;</p>
+            <p class="text-body-secondary"><strong>To:</strong> ${escapeHtml((message.toRecipients || []).map(item => item.emailAddress?.address).filter(Boolean).join(', '))}</p>
+            <div class="d-flex gap-2 flex-wrap mb-3">
+                ${message.hasAttachments ? '<span class="badge text-bg-info">Attachments</span>' : ''}
+                ${message.importance === 'high' ? '<span class="badge text-bg-warning">Important</span>' : ''}
+                ${message.webLink ? `<a class="btn btn-sm btn-outline-primary" target="_blank" rel="noreferrer" href="${escapeHtml(message.webLink)}">Open in Outlook</a>` : ''}
+            </div>
+            <div class="message-body">${message.body?.content || escapeHtml(message.bodyPreview || '')}</div>
+        `;
+    }
+
+    async function loadMail() {
+        mailCount.textContent = 'Loading emails...';
+        mailList.innerHTML = '<div class="empty-state">Loading your mailbox...</div>';
+        try {
+            const response = await fetch('/api/outlook/messages?top=50');
+            const data = await response.json();
+            if (!response.ok || data.error) {
+                throw new Error(data.error?.message || data.error || 'Unable to load mailbox');
+            }
+            messages = data.value || [];
+            selectedId = messages[0]?.id || null;
+            renderList();
+            if (selectedId) selectMessage(selectedId);
+        } catch (error) {
+            mailCount.textContent = 'Mailbox could not load';
+            mailList.innerHTML = `<div class="empty-state text-danger">${escapeHtml(error.message)}<br><br>Get a new Graph Explorer token with Mail.Read permission, then connect again.</div>`;
+        }
+    }
+
+    document.getElementById('refresh-mail').addEventListener('click', loadMail);
+    loadMail();
+</script>
+{% endblock content %}

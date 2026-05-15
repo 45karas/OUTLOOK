@@ -24,7 +24,7 @@ def favicon():
 @bp.route("/")
 def home():
     if session.get("company_user"):
-        return redirect("/outlook_graph?autoload=1")
+        return redirect("/mail")
     return render_template(
         "company_login.html",
         title="Connect Outlook",
@@ -35,6 +35,13 @@ def home():
 @bp.route("/settings")
 def settings():
     return render_template("settings.html", title="Settings")
+
+
+@bp.route("/mail")
+def mail():
+    if not session.get("company_user"):
+        return redirect("/")
+    return render_template("mail_panel.html", title="Outlook Mail")
 
 
 @bp.route("/setup-login")
