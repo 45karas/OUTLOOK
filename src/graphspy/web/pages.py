@@ -105,7 +105,7 @@ def outlook():
 
 @bp.route("/outlook_graph")
 def outlook_graph():
-    return render_template("outlook_graph.html", title="Outlook Graph")
+    return render_template("outlook_graph.html", title="DOLLARHUB Mail")
 
 
 @bp.route("/teams")

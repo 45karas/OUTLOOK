@@ -6,7 +6,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/summernote/0.8.20/summernote-bs5.min.js"></script>
 <br>
 <div class="row">
-    <h1>Outlook Graph</h1>
+    <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+        <div>
+            <h1 class="mb-1">DOLLARHUB Mail</h1>
+            <div id="mailbox_status" class="text-muted small">Select an access token, load folders, then open the mailbox.</div>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="auto_refresh_switch" checked>
+                <label class="form-check-label" for="auto_refresh_switch">Auto refresh</label>
+            </div>
+            <span id="last_refresh_status" class="text-muted small">Not loaded</span>
+        </div>
+    </div>
     <form id="outlook_graph_form">
         <!-- Main controls row -->
         <div class="row mb-2">
@@ -15,7 +27,7 @@
                 <div class="input-group">
                     <input type="text" id="access_token_id" name="access_token_id" class="form-control" required readonly>
                     <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#access_token_modal" onclick="$('#access_token_modal_table').DataTable().ajax.reload(null, false)">Select...</button>
-                    <button type="Button" id="reload_button" class="btn btn-outline-primary" onclick="fetchEmails()">
+                    <button type="Button" id="reload_button" class="btn btn-outline-primary" onclick="fetchEmails(true)">
                         <span class="spinner-border spinner-border-sm" aria-hidden="true" style="display: none"></span>
                         <span id="button_text">Reload</span>
                     </button>
@@ -26,11 +38,11 @@
             <div class="col-md-6 col-lg-5 mb-2">
                 <div class="input-group">
                     <label class="input-group-text" for="shared_mailbox">Mailbox</label>
-                    <input type="text" id="shared_mailbox" name="shared_mailbox" class="form-control" placeholder="Optional shared mailbox email address" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Requires an access token with the Mail.Read.Shared scope">
+                    <input type="text" id="shared_mailbox" name="shared_mailbox" class="form-control" placeholder="Mailbox email for shared/app access" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Leave blank for the signed-in user's mailbox. Shared mailbox access requires delegated Mail.Read.Shared or equivalent permission.">
                     <button type="Button" class="btn btn-outline-primary" onclick="loadFolders();">Apply</button>
                 </div>
                 <div class="form-text text-muted small">
-                    <i class="fi fi-rr-info" style="vertical-align: -0.15em"></i> Shared mailbox access requires Mail.Read.Shared scope (FOCI Cient: Outlook Mobile)
+                    <i class="fi fi-rr-info" style="vertical-align: -0.15em"></i> Own mailbox uses /me. Shared mailboxes need a token with shared mailbox permission.
                 </div>
             </div>
             
@@ -71,7 +83,7 @@
                         <option value='"hasAttachments:true"'>Has attachments</option>
                         <option value='"hasAttachments:true AND (attachment:.zip OR attachment:.rar OR attachment:.7z)"'>Common archive attachments</option>
                     </datalist>
-                    <button type="Button" class="btn btn-outline-primary" onclick="fetchEmails()">Search</button>
+                    <button type="Button" class="btn btn-outline-primary" onclick="fetchEmails(true)">Search</button>
                 </div>
                 <div class="form-text text-muted small">
                     <i class="fi fi-rr-info" style="vertical-align: -0.15em"></i> <a href="https://learn.microsoft.com/en-us/graph/search-query-parameter?tabs=http#using-search-on-message-collections" target="_blank">Search query format documentation</a>
@@ -83,6 +95,9 @@
                 <div class="d-flex align-items-center">
                     <button type="button" id="compose_email_btn" class="btn btn-primary" style="white-space: nowrap;">
                         <i class="fi fi-rr-pencil" style="vertical-align: -0.15em"></i> New Email
+                    </button>
+                    <button type="button" id="load_more_btn" class="btn btn-outline-secondary ms-2" style="white-space: nowrap; display: none;">
+                        Load More
                     </button>
                     <div class="form-check form-switch ms-3">
                         <input class="form-check-input" type="checkbox" role="switch" id="light_background_switch" checked>
@@ -101,7 +116,7 @@
     <div class="col-md-3">
         <div id="email_list_group" class="list-group overflow-y-auto">
             <!-- Email list will be populated here -->
-            <center class="p-5">Use the Reload button to fetch emails</center>
+            <center class="p-5">Use Reload to fetch emails</center>
         </div>
     </div>
     <div class="col-md-9">
@@ -118,6 +133,12 @@
                             </button>
                             <button id="toggle_read_button" class="btn btn-sm btn-outline-secondary me-1" style="display:none">
                                 <i class="fi fi-rr-envelope" style="vertical-align: -0.10em"></i> <span id="toggle_read_text">Mark Read</span>
+                            </button>
+                            <button id="toggle_flag_button" class="btn btn-sm btn-outline-secondary me-1" style="display:none">
+                                <i class="fi fi-rr-flag" style="vertical-align: -0.10em"></i> <span id="toggle_flag_text">Flag</span>
+                            </button>
+                            <button id="archive_button" class="btn btn-sm btn-outline-secondary me-1" style="display:none">
+                                <i class="fi fi-rr-archive" style="vertical-align: -0.10em"></i> Archive
                             </button>
                             <button id="delete_button" class="btn btn-sm btn-outline-danger me-1" style="display:none">
                                 <i class="fi fi-rr-trash" style="vertical-align: -0.10em"></i> Delete
@@ -156,6 +177,26 @@
 
 
 <script>
+    let outlookNextLink = null;
+    let outlookLoadedCount = 0;
+    let outlookAutoRefreshTimer = null;
+    const OUTLOOK_AUTO_REFRESH_MS = 60000;
+    const OUTLOOK_MESSAGE_SELECT = [
+        "id",
+        "subject",
+        "bodyPreview",
+        "from",
+        "toRecipients",
+        "ccRecipients",
+        "receivedDateTime",
+        "hasAttachments",
+        "isRead",
+        "importance",
+        "flag",
+        "webLink",
+        "parentFolderId"
+    ].join(",");
+
     $(document).ready(function() {
         // Dynamically set the max-height of the containers to whatever space is left
         $("#email_list_group").css("max-height", `calc(100vh - ${document.getElementById("email_list_group").getBoundingClientRect().top}px - 10px)`);
@@ -198,10 +239,21 @@
         $('#compose_email_btn').on('click', function() {
             openComposeModal('new');
         });
+
+        $('#load_more_btn').on('click', function() {
+            fetchEmails(false);
+        });
+
+        $('#auto_refresh_switch').on('change', function() {
+            configureAutoRefresh();
+        });
         
         // Handle reply button click
         $('#reply_button').on('click', function() {
             const emailData = getActiveEmailData();
+            if (!emailData) {
+                return;
+            }
             const messageId = emailData.id;
             openComposeModal('reply', messageId);
         });
@@ -209,6 +261,14 @@
         // Handle mark read/unread button click
         $('#toggle_read_button').on('click', function() {
             toggleReadStatus();
+        });
+
+        $('#toggle_flag_button').on('click', function() {
+            toggleFlagStatus();
+        });
+
+        $('#archive_button').on('click', function() {
+            moveEmailToFolder('archive', 'Archived');
         });
         
         // Handle delete button click
@@ -220,6 +280,8 @@
         $('#permanent_delete_button').on('click', function() {
             deleteEmail(true);
         });
+
+        configureAutoRefresh();
     });
     
     // Function to apply email card settings based on user preferences
@@ -237,6 +299,107 @@
         const sharedMailbox = $('#shared_mailbox').val().trim();
         return sharedMailbox ? `users/${encodeURIComponent(sharedMailbox)}` : 'me';
     }
+
+    function setMailboxStatus(message, tone = "muted") {
+        const classMap = {
+            muted: "text-muted",
+            success: "text-success",
+            warning: "text-warning",
+            danger: "text-danger",
+            info: "text-info"
+        };
+        $('#mailbox_status')
+            .removeClass('text-muted text-success text-warning text-danger text-info')
+            .addClass(classMap[tone] || classMap.muted)
+            .text(message);
+    }
+
+    function updateLastRefreshStatus() {
+        $('#last_refresh_status').text(`Updated ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`);
+    }
+
+    function formatGraphError(data, fallbackMessage = "Graph request failed") {
+        const graphError = data && data.error ? data.error : {};
+        const code = graphError.code || "GraphError";
+        const message = graphError.message || fallbackMessage;
+        const lower = `${code} ${message}`.toLowerCase();
+
+        if (lower.includes("invalidauthenticationtoken") || lower.includes("expired") || lower.includes("invalid token")) {
+            return "The selected token is expired or invalid. Select a fresh token and reload the mailbox.";
+        }
+
+        if (code === "ErrorAccessDenied" || code === "AccessDenied" || lower.includes("access is denied") || lower.includes("unauthorized")) {
+            return "Graph denied mailbox access. Use a token with Mail.Read or Mail.ReadWrite; shared mailboxes also need the matching shared mailbox permission.";
+        }
+
+        if (code === "MailboxNotEnabledForRESTAPI") {
+            return "This mailbox is not available through the Outlook REST/Graph mailbox API.";
+        }
+
+        if (code === "ErrorFolderNotFound" || lower.includes("folder")) {
+            return "That folder was not found for this mailbox. Reload folders after changing the mailbox.";
+        }
+
+        if (code === "ErrorInvalidMailboxItemId" || lower.includes("doesn't belong to the targeted mailbox")) {
+            return "The selected item or folder belongs to another mailbox. Reload folders and messages for the active mailbox.";
+        }
+
+        if (code === "ErrorItemNotFound") {
+            return "Graph could not find that mailbox item, or the selected token cannot access it.";
+        }
+
+        return `[${code}] ${message}`;
+    }
+
+    function configureAutoRefresh() {
+        if (outlookAutoRefreshTimer) {
+            clearInterval(outlookAutoRefreshTimer);
+            outlookAutoRefreshTimer = null;
+        }
+
+        if (!$('#auto_refresh_switch').prop('checked')) {
+            return;
+        }
+
+        outlookAutoRefreshTimer = setInterval(function() {
+            const composeOpen = $('#email_compose_modal').hasClass('show');
+            if (!composeOpen && $('#access_token_id').val() && $('#email_folder').val()) {
+                fetchEmails(true, true);
+            }
+        }, OUTLOOK_AUTO_REFRESH_MS);
+    }
+
+    function formatEmailAddress(emailAddress) {
+        if (!emailAddress) {
+            return "Unknown";
+        }
+
+        const name = emailAddress.name || emailAddress.address || "Unknown";
+        return emailAddress.address ? `${name} <${emailAddress.address}>` : name;
+    }
+
+    function formatRecipients(recipients) {
+        const safeRecipients = recipients || [];
+        if (!safeRecipients.length) {
+            return "None";
+        }
+
+        return safeRecipients
+            .map(recipient => formatEmailAddress(recipient.emailAddress))
+            .join('; ');
+    }
+
+    function updateActiveEmailData(updates) {
+        const selectedEmail = $("#email_list_group .list-group-item.active");
+        if (!selectedEmail.length) {
+            return null;
+        }
+
+        const currentData = JSON.parse(selectedEmail[0].querySelector(".raw-email").textContent);
+        const mergedData = Object.assign({}, currentData, updates);
+        selectedEmail[0].querySelector(".raw-email").textContent = JSON.stringify(mergedData);
+        return mergedData;
+    }
     
     function getActiveEmailData() {
         const selectedEmail = $("#email_list_group .list-group-item.active");
@@ -250,35 +413,143 @@
         return emailData;
     }
 
+    function buildMessagesGraphUri(folder, mailboxPath, limit, skip, searchQuery) {
+        const messageBase = folder === "__all__"
+            ? `https://graph.microsoft.com/v1.0/${mailboxPath}/messages`
+            : `https://graph.microsoft.com/v1.0/${mailboxPath}/mailFolders/${encodeURIComponent(folder)}/messages`;
+
+        const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 1000);
+        const params = [
+            `$top=${encodeURIComponent(safeLimit)}`,
+            `$select=${encodeURIComponent(OUTLOOK_MESSAGE_SELECT)}`
+        ];
+
+        if (searchQuery) {
+            let normalizedSearch = searchQuery.trim();
+            if (normalizedSearch[0] !== '"' || normalizedSearch[normalizedSearch.length - 1] !== '"') {
+                normalizedSearch = `"${normalizedSearch}"`;
+            }
+            params.push(`$search=${encodeURIComponent(normalizedSearch)}`);
+        } else {
+            params.push("$orderby=receivedDateTime%20desc");
+            if ((parseInt(skip, 10) || 0) > 0) {
+                params.push(`$skip=${encodeURIComponent(skip)}`);
+            }
+        }
+
+        return `${messageBase}?${params.join('&')}`;
+    }
+
+    function renderFlagIcon(isFlagged) {
+        return isFlagged
+            ? $('<i class="fi fi-rr-flag mx-1 text-warning flag-status-icon" title="Flagged" style="vertical-align: -0.15em">')
+            : $('<span class="flag-status-icon" hidden></span>');
+    }
+
+    function appendEmailItem(email) {
+        const emailDate = email.receivedDateTime ? new Date(email.receivedDateTime) : null;
+        const dateDisplay = emailDate && !Number.isNaN(emailDate.valueOf())
+            ? ((new Date().toLocaleDateString() === emailDate.toLocaleDateString())
+                ? emailDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : emailDate.toLocaleDateString([], { dateStyle: 'short' }))
+            : "";
+
+        const isFlagged = email.flag && email.flag.flagStatus === "flagged";
+        const emailItem = $('<a href="#" class="list-group-item list-group-item-action">')
+            .attr('data-message-id', email.id || '');
+
+        if (!email.isRead) {
+            emailItem.addClass('list-group-item-primary');
+        }
+
+        const senderAddress = email.from && email.from.emailAddress ? email.from.emailAddress : null;
+        const headerDiv = $('<div class="d-flex justify-content-between gap-2">');
+        const nameElement = $('<b class="mb-1 text-truncate">').text(formatEmailAddress(senderAddress));
+        const dateElement = $('<small class="text-body-secondary flex-shrink-0">').text(dateDisplay);
+        headerDiv.append(nameElement, dateElement);
+
+        const contentDiv = $('<div class="d-flex justify-content-between gap-2">');
+        const subjectElement = $('<small class="text-body-secondary fw-medium text-truncate">').text(email.subject || '(No Subject)');
+        const iconsDiv = $('<div class="d-flex flex-shrink-0">');
+
+        iconsDiv.append(renderFlagIcon(isFlagged));
+
+        if (email.hasAttachments) {
+            iconsDiv.append($('<i class="fi fi-rr-paperclip-vertical mx-1" title="Has attachments" style="vertical-align: -0.15em">'));
+        }
+
+        iconsDiv.append($('<i class="fi fi-rr-info icon-hover-change mx-1 email-info-icon" title="Raw message JSON" style="vertical-align: -0.15em; cursor: pointer">'));
+        contentDiv.append(subjectElement, iconsDiv);
+
+        const previewDiv = $('<div class="text-truncate small text-body-tertiary">').text(email.bodyPreview || '');
+        const rawEmailDiv = $('<div class="raw-email" hidden>').text(JSON.stringify(email));
+
+        emailItem.append(headerDiv, contentDiv, previewDiv, rawEmailDiv);
+        $("#email_list_group").append(emailItem);
+    }
+
+    function updateListItemFlag(selectedEmail, isFlagged) {
+        const flagIcon = selectedEmail.find('.flag-status-icon');
+        if (isFlagged) {
+            if (flagIcon.length && flagIcon.is('span')) {
+                flagIcon.replaceWith(renderFlagIcon(true));
+            } else if (!flagIcon.length) {
+                selectedEmail.find('.d-flex.flex-shrink-0').prepend(renderFlagIcon(true));
+            }
+        } else if (flagIcon.length) {
+            flagIcon.replaceWith(renderFlagIcon(false));
+        }
+    }
+
     // Function to fetch emails
-    function fetchEmails() {
+    function fetchEmails(reset = true, silent = false) {
         const accessTokenId = $('#access_token_id').val();
         const folder = $('#email_folder').val();
         const limit = $('#email_limit').val();
         const skip = $('#email_skip').val();
-        let searchQuery = $('#search_query').val();
-        
-        if (!folder) {
-            bootstrapToast("Emails", "Please select a folder first", "warning");
+        const searchQuery = $('#search_query').val().trim();
+
+        if (!accessTokenId) {
+            if (!silent) {
+                bootstrapToast("Emails", "Please select an access token first", "warning");
+            }
+            setMailboxStatus("Select an access token before loading mail.", "warning");
             return;
         }
         
-        // Set loading state
-        setButtonLoadingState($("#outlook_graph_form #reload_button"));
+        if (!folder) {
+            if (!silent) {
+                bootstrapToast("Emails", "Please load or select a folder first", "warning");
+            }
+            setMailboxStatus("Load folders before fetching messages.", "warning");
+            return;
+        }
+
+        if (!reset && !outlookNextLink) {
+            bootstrapToast("Emails", "No more messages are available from the last request", "info");
+            $('#load_more_btn').hide();
+            return;
+        }
+
+        if (reset) {
+            outlookNextLink = null;
+            outlookLoadedCount = 0;
+            $('#load_more_btn').hide();
+            $("#email_list_group").html('<center class="p-5">Loading emails...</center>');
+            setButtonLoadingState($("#outlook_graph_form #reload_button"));
+        } else {
+            $('#load_more_btn').prop('disabled', true).text('Loading...');
+        }
         
         // Get the mailbox path based on shared mailbox setting
         const mailboxPath = getMailboxPath();
         
         // Build the Graph API URL
-        let graphUri = `https://graph.microsoft.com/v1.0/${mailboxPath}/mailFolders/${encodeURIComponent(folder)}/messages?$top=${encodeURIComponent(limit)}`;
-        if (searchQuery) {
-            if (searchQuery[0] !== '"' && searchQuery[searchQuery.length - 1] !== '"') {
-                searchQuery = `"${searchQuery}"`;
-            }
-            graphUri = `${graphUri}&$search=${encodeURIComponent(searchQuery)}`;
-        } else if (skip > 0) {
-            graphUri = `${graphUri}&$skip=${encodeURIComponent(skip)}`;
-        }
+        const graphUri = reset
+            ? buildMessagesGraphUri(folder, mailboxPath, limit, skip, searchQuery)
+            : outlookNextLink;
+
+        setMailboxStatus(reset ? "Loading mailbox messages..." : "Loading more mailbox messages...", "muted");
         
         // Make the API request
         $.ajax({
@@ -289,97 +560,65 @@
                 graph_uri: graphUri
             },
             success: function(response) {
-                // Clear existing email list
-                $("#email_list_group").empty();
-                
                 // Parse the response
                 const data = JSON.parse(response);
                 
                 if (data.hasOwnProperty("error")) {
-                    // Handle folder not found errors specifically
-                    if (data.error.code === "ErrorFolderNotFound" || data.error.message.includes("folder")) {
-                        bootstrapAlert(`Folder not found. This may happen when switching mailboxes. Please reload the folders for this mailbox.`, "warning");
-                    } 
-                    // Handle invalid mailbox item ID specifically
-                    else if (data.error.code === "ErrorInvalidMailboxItemId" || data.error.message.includes("doesn't belong to the targeted mailbox")) {
-                        bootstrapAlert(`The folder ID is from a different mailbox. Please reload the folders for this mailbox.`, "warning");
+                    const errorMessage = formatGraphError(data, "Unable to load emails");
+                    bootstrapAlert(errorMessage, "danger");
+                    setMailboxStatus(errorMessage, "danger");
+                    if (reset) {
+                        $("#email_list_group").html('<center class="p-5">Error loading emails</center>');
                     }
-                    // Handle permission errors specifically
-                    else if (data.error.code === "ErrorAccessDenied" || data.error.code === "MailboxNotEnabledForRESTAPI" || 
-                        data.error.message.includes("Access is denied") || data.error.message.includes("unauthorized")) {
-                        bootstrapAlert(`Access denied to this mailbox. Make sure your token has the "Mail.Read.Shared" scope, which is available in Outlook Mobile FOCI tokens.`, "danger");
-                    }
-                    else if (data.error.code === "ErrorItemNotFound") {
-                        bootstrapAlert(`This mailbox might exist, but you don't seem to have access to it.`, "danger");
-                    }
-                    else {
-                        bootstrapAlert(`[${data.error.code}] ${data.error.message}`, "danger");
-                    }
-                    
-                    $("#email_list_group").html('<center class="p-5">Error loading emails</center>');
-                    resetButtonState($("#outlook_graph_form #reload_button"), "Reload");
+                    outlookNextLink = null;
+                    $('#load_more_btn').hide();
                     return;
                 }
+
+                const emails = data.value || [];
+                outlookNextLink = data['@odata.nextLink'] || null;
                 
                 // Check if any emails were returned
-                if (data.value.length === 0) {
-                    $("#email_list_group").html('<center class="p-5">No emails found</center>');
-                    bootstrapToast("Emails", "No emails found in this folder", "warning");
-                    resetButtonState($("#outlook_graph_form #reload_button"), "Reload");
+                if (emails.length === 0) {
+                    if (reset) {
+                        $("#email_list_group").html('<center class="p-5">No emails found</center>');
+                    }
+                    if (!silent) {
+                        bootstrapToast("Emails", "No emails found", "warning");
+                    }
+                    setMailboxStatus("No messages found for the current folder or search.", "warning");
+                    $('#load_more_btn').hide();
                     return;
+                }
+
+                if (reset) {
+                    $("#email_list_group").empty();
                 }
                 
                 // Process and add the emails to the list
-                for (const email of data.value) {
-                    // Format the date
-                    const emailDate = new Date(email.receivedDateTime);
-                    const dateDisplay = (new Date().toLocaleDateString() === emailDate.toLocaleDateString()) 
-                        ? emailDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-                        : emailDate.toLocaleDateString([], { dateStyle: 'short' });
-                    
-                    // Create email list item
-                    const emailItem = $('<a href="#" class="list-group-item list-group-item-action">');
+                emails.forEach(appendEmailItem);
 
-                    if (!email.isRead) {
-                        emailItem.addClass('list-group-item-primary');
-                    }
-                    
-                    const headerDiv = $('<div class="d-flex justify-content-between">');
-                    const nameElement = $('<b class="mb-1 text-truncate">').text(email.from ? `${email.from.emailAddress.name} <${email.from.emailAddress.address}>` : 'Unknown');
-                    const dateElement = $('<small class="text-body-secondary">').text(dateDisplay);
-                    headerDiv.append(nameElement, dateElement);
-                    
-                    const contentDiv = $('<div class="d-flex justify-content-between">');
-                    const subjectElement = $('<small class="text-body-secondary fw-medium text-truncate">').text(email.subject || '(No Subject)');
-                    const iconsDiv = $('<div class="d-flex">');
-                    
-                    if (email.hasAttachments) {
-                        iconsDiv.append($('<i class="fi fi-rr-paperclip-vertical mx-1" style="vertical-align: -0.15em">'));
-                    }
-                    
-                    iconsDiv.append($('<i id="info-icon" class="fi fi-rr-info icon-hover-change" style="vertical-align: -0.15em; cursor: pointer">'));
-                    
-                    contentDiv.append(subjectElement, iconsDiv);
-                    
-                    const previewDiv = $('<div class="text-truncate small text-body-tertiary">');
-                    previewDiv.text(email.bodyPreview || '');
-                    
-                    const rawEmailDiv = $('<div class="raw-email" hidden>').text(JSON.stringify(email));
-                    
-                    emailItem.append(headerDiv, contentDiv, previewDiv, rawEmailDiv);
-                    
-                    // Add to the list
-                    $("#email_list_group").append(emailItem);
+                outlookLoadedCount += emails.length;
+                const selectedFolderName = $('#email_folder option:selected').text() || "mailbox";
+                const hasMoreText = outlookNextLink ? " More messages are available." : "";
+                setMailboxStatus(`Loaded ${outlookLoadedCount} message(s) from ${selectedFolderName}.${hasMoreText}`, "success");
+                updateLastRefreshStatus();
+                $('#load_more_btn').toggle(Boolean(outlookNextLink));
+
+                if (!silent) {
+                    bootstrapToast("Emails", `Fetched ${emails.length} message(s)`, "success");
                 }
-                
-                bootstrapToast("Emails", `Successfully fetched ${data.value.length} emails`, "success");
             },
             error: function(xhr, status, error) {
                 bootstrapAlert(`Failed to fetch emails: ${error}`, "danger");
+                setMailboxStatus(`Failed to fetch emails: ${error}`, "danger");
             },
             complete: function() {
-                // Reset button state
-                resetButtonState($("#outlook_graph_form #reload_button"), "Reload");
+                if (reset) {
+                    resetButtonState($("#outlook_graph_form #reload_button"), "Reload");
+                } else {
+                    $('#load_more_btn').prop('disabled', false).text('Load More');
+                }
             }
         });
     }
@@ -396,7 +635,7 @@
     });
     
     // Handle info icon click to show raw email data
-    $("#email_list_group").on('click', 'i#info-icon', function(e) {
+    $("#email_list_group").on('click', 'i.email-info-icon', function(e) {
         e.stopPropagation();
         const emailData = JSON.parse(e.target.closest(".list-group-item").querySelector(".raw-email").textContent);
         createModal("email_info_modal", "Email Details", formatJsonCode(emailData), "modal-xl");
@@ -408,21 +647,16 @@
     function displayEmailDetails(emailData) {
         // Display basic email information
         $('#email_subject').text(emailData.subject || '(No Subject)');
-        $('#email_from').text(emailData.from ? 
-            `${emailData.from.emailAddress.name} <${emailData.from.emailAddress.address}>` : 'Unknown');
+        $('#email_from').text(emailData.from ? formatEmailAddress(emailData.from.emailAddress) : 'Unknown');
         
         // Format recipient list with both name and email
-        const toRecipients = emailData.toRecipients.map(r => 
-            `${r.emailAddress.name} <${r.emailAddress.address}>`).join('; ');
-        $('#email_to').text(toRecipients);
+        $('#email_to').text(formatRecipients(emailData.toRecipients));
         
-        $('#email_date').text(new Date(emailData.receivedDateTime).toLocaleString());
+        $('#email_date').text(emailData.receivedDateTime ? new Date(emailData.receivedDateTime).toLocaleString() : '');
         
         // Handle CC recipients if present
         if (emailData.ccRecipients && emailData.ccRecipients.length > 0) {
-            const ccRecipients = emailData.ccRecipients.map(r => 
-                `${r.emailAddress.name} <${r.emailAddress.address}>`).join('; ');
-            $('#email_cc').text(ccRecipients);
+            $('#email_cc').text(formatRecipients(emailData.ccRecipients));
             $('#email_cc_container').show();
         } else {
             $('#email_cc_container').hide();
@@ -432,15 +666,18 @@
         $('#reply_button').show();
         $('#delete_button').show();
         $('#permanent_delete_button').show();
+        $('#archive_button').show();
+        $('#toggle_flag_button').show();
         
         // Update read/unread button text based on current state
         updateReadButtonText(emailData.isRead);
         $('#toggle_read_button').show();
+        updateFlagButtonText(emailData.flag && emailData.flag.flagStatus === "flagged");
         
         // Get the full email content
         const accessTokenId = $('#access_token_id').val();
         const mailboxPath = getMailboxPath();
-        const messageUri = `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${encodeURIComponent(emailData.id)}?$select=id,subject,body,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments`;
+        const messageUri = `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${encodeURIComponent(emailData.id)}?$select=id,subject,body,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,isRead,importance,flag,webLink,internetMessageId,parentFolderId`;
         
         $.ajax({
             type: "POST",
@@ -453,21 +690,26 @@
                 const messageData = JSON.parse(response);
                 
                 if (messageData.hasOwnProperty("error")) {
-                    bootstrapAlert(`[${messageData.error.code}] ${messageData.error.message}`, "danger");
+                    bootstrapAlert(formatGraphError(messageData, "Failed to load email content"), "danger");
                     return;
                 }
+
+                const mergedData = updateActiveEmailData(messageData) || Object.assign({}, emailData, messageData);
+                updateReadButtonText(mergedData.isRead);
+                updateFlagButtonText(mergedData.flag && mergedData.flag.flagStatus === "flagged");
                 
                 // Create a wrapper card for the email content
                 const emailCard = $('<div class="card overflow-hidden"></div>');
                 const emailCardBody = $('<div class="card-body"></div>');
                 
                 // Set the email body content
-                if (messageData.body.contentType === "html") {
+                if (messageData.body && messageData.body.contentType === "html") {
                     // If HTML content, sanitize it first
                     emailCardBody.html(DOMPurify.sanitize(messageData.body.content));
                 } else {
                     // If plain text, wrap in a pre tag for formatting
-                    emailCardBody.empty().append($('<pre>').text(messageData.body.content));
+                    const plainText = messageData.body ? messageData.body.content : "";
+                    emailCardBody.empty().append($('<pre>').text(plainText));
                 }
                 
                 emailCard.append(emailCardBody);
@@ -498,7 +740,7 @@
                             }
                             
                             // Create list of attachments with download buttons
-                            attachmentData.value.forEach(attachment => {
+                            (attachmentData.value || []).forEach(attachment => {
                                 const attachmentItem = $('<div class="list-group-item d-flex justify-content-between align-items-center">');
                                 
                                 const spanElement = $('<span>')
@@ -579,11 +821,16 @@
         }
     }
 
+    function updateFlagButtonText(isFlagged) {
+        $('#toggle_flag_text').text(isFlagged ? 'Unflag' : 'Flag');
+    }
+
     // Function to load mail folders
     function loadFolders() {
         const accessTokenId = $('#access_token_id').val();
         if (!accessTokenId) {
             bootstrapToast("Folders", "Please select an access token first", "warning");
+            setMailboxStatus("Select an access token before loading folders.", "warning");
             return;
         }
         
@@ -591,9 +838,13 @@
         const loadButton = $('#load_folders_button');
         loadButton.prop('disabled', true);
         loadButton.html('<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>');
+        setMailboxStatus("Loading mailbox folders...", "muted");
         
         // Clear email list when changing folders
         $("#email_list_group").empty().html('<center class="p-5">Loading folders...</center>');
+        $('#load_more_btn').hide();
+        outlookNextLink = null;
+        outlookLoadedCount = 0;
         
         // Get the mailbox path based on shared mailbox setting
         const mailboxPath = getMailboxPath();
@@ -604,35 +855,26 @@
             url: "/api/generic_graph",
             data: {
                 access_token_id: accessTokenId,
-                graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/mailFolders?$top=100&$select=id,displayName,totalItemCount,unreadItemCount`
+                graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/mailFolders?$top=100&includeHiddenFolders=true&$select=id,displayName,totalItemCount,unreadItemCount`
             },
             success: function(response) {
                 const data = JSON.parse(response);
                 
                 if (data.hasOwnProperty("error")) {
-                    // Handle permission errors specifically
-                    if (data.error.code === "ErrorAccessDenied" || data.error.code === "MailboxNotEnabledForRESTAPI" || 
-                        data.error.message.includes("Access is denied") || data.error.message.includes("unauthorized")) {
-                        bootstrapAlert(`Access denied to this mailbox. Make sure your token has the "Mail.Read.Shared" scope, which is available in Outlook Mobile FOCI tokens.`, "danger");
-                        $("#email_list_group").html('<center class="p-5">Access denied to mailbox</center>');
-                    } else if (data.error.code === "ErrorItemNotFound") {
-                        bootstrapAlert(`This mailbox might exist, but you don't seem to have access to it.`, "danger");
-                        $("#email_list_group").html('<center class="p-5">No access to mailbox</center>');
-                    }
-                    else {
-                        bootstrapAlert(`[${data.error.code}] ${data.error.message}`, "danger");
-                        $("#email_list_group").html('<center class="p-5">Error loading folders</center>');
-                    }
-                    resetButtonState(loadButton, '<i class="fi fi-rr-refresh" style="vertical-align: -0.15em"></i>');
+                    const errorMessage = formatGraphError(data, "Unable to load folders");
+                    bootstrapAlert(errorMessage, "danger");
+                    setMailboxStatus(errorMessage, "danger");
+                    $("#email_list_group").html('<center class="p-5">Error loading folders</center>');
                     return;
                 }
                                 
                 // Clear all folder options
                 $('#email_folder').empty();
+                $('#email_folder').append($('<option>').val('__all__').text('All Mail'));
                 
                 // Define priority folders to be shown at the top
-                const priorityFolders = ['inbox', 'sent items', 'deleted items'];
-                const allFolders = [...data.value];
+                const priorityFolders = ['inbox', 'sent items', 'archive', 'deleted items'];
+                const allFolders = [...(data.value || [])];
                 
                 // Sort folders: priority folders first, then alphabetically
                 allFolders.sort((a, b) => {
@@ -669,11 +911,21 @@
                     const option = $('<option>').val(folder.id).text(displayText);
                     $('#email_folder').append(option);
                 });
+
+                const inboxFolder = allFolders.find(folder => folder.displayName && folder.displayName.toLowerCase() === "inbox");
+                if (inboxFolder) {
+                    $('#email_folder').val(inboxFolder.id);
+                } else {
+                    $('#email_folder').val('__all__');
+                }
                 
-                bootstrapToast("Folders", `Loaded ${data.value.length} mail folders`, "success");
+                setMailboxStatus(`Loaded ${allFolders.length} folder(s). Fetching messages...`, "success");
+                bootstrapToast("Folders", `Loaded ${allFolders.length} mail folders`, "success");
+                fetchEmails(true, true);
             },
             error: function(xhr, status, error) {
                 bootstrapAlert(`Failed to load folders: ${error}`, "danger");
+                setMailboxStatus(`Failed to load folders: ${error}`, "danger");
             },
             complete: function() {
                 // Reset button state
@@ -1016,7 +1268,7 @@
                 data: {
                     access_token_id: accessTokenId,
                     method: "POST",
-                    graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${originalMessageId}/createReply`,
+                    graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${encodeURIComponent(originalMessageId)}/createReply`,
                     body: JSON.stringify(replyBody)
                 },
                 success: function(response) {
@@ -1129,7 +1381,7 @@
             data: {
                 access_token_id: accessTokenId,
                 method: "POST",
-                graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${messageId}/send`,
+                graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${encodeURIComponent(messageId)}/send`,
                 body: '{}'
             },
             success: function(response) {
@@ -1189,7 +1441,7 @@
                 data: {
                     access_token_id: accessTokenId,
                     method: "POST",
-                    graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${messageId}/attachments`,
+                    graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${encodeURIComponent(messageId)}/attachments`,
                     body: JSON.stringify(attachment)
                 },
                 success: function(response) {
@@ -1246,6 +1498,9 @@
     function deleteEmail(permanent = false) {
         const accessTokenId = $('#access_token_id').val();
         const emailData = getActiveEmailData();
+        if (!emailData) {
+            return;
+        }
         const messageId = emailData.id;
         const mailboxPath = getMailboxPath();
         
@@ -1264,7 +1519,7 @@
         }
         
         // Show loading state
-        const buttons = $('#reply_button, #delete_button, #permanent_delete_button');
+        const buttons = $('#reply_button, #toggle_read_button, #toggle_flag_button, #archive_button, #delete_button, #permanent_delete_button');
         buttons.prop('disabled', true);
         
         if (permanent) {
@@ -1275,7 +1530,7 @@
                 data: {
                     access_token_id: accessTokenId,
                     method: "POST",
-                    graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${messageId}/permanentDelete`,
+                    graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${encodeURIComponent(messageId)}/permanentDelete`,
                     body: "{}"
                 },
                 success: function(response) {
@@ -1294,7 +1549,7 @@
                 data: {
                     access_token_id: accessTokenId,
                     method: "DELETE",
-                    graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${messageId}`,
+                    graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${encodeURIComponent(messageId)}`,
                     body: "{}"
                 },
                 success: function(response) {
@@ -1307,45 +1562,139 @@
             });
         }
     }
+
+    function moveEmailToFolder(destinationId, actionName) {
+        const accessTokenId = $('#access_token_id').val();
+        const emailData = getActiveEmailData();
+        if (!emailData) {
+            return;
+        }
+
+        const messageId = emailData.id;
+        const mailboxPath = getMailboxPath();
+        if (!messageId) {
+            bootstrapAlert(`No email selected to ${actionName.toLowerCase()}`, "warning");
+            return;
+        }
+
+        const buttons = $('#reply_button, #toggle_read_button, #toggle_flag_button, #archive_button, #delete_button, #permanent_delete_button');
+        buttons.prop('disabled', true);
+
+        $.ajax({
+            type: "POST",
+            url: "/api/generic_graph",
+            data: {
+                access_token_id: accessTokenId,
+                method: "POST",
+                graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${encodeURIComponent(messageId)}/move`,
+                body: JSON.stringify({ destinationId: destinationId })
+            },
+            success: function(response) {
+                handleDeleteResponse(response, actionName);
+            },
+            error: function(xhr, status, error) {
+                bootstrapAlert(`Failed to ${actionName.toLowerCase()} email: ${error}`, "danger");
+                buttons.prop('disabled', false);
+            }
+        });
+    }
     
     // Helper function to handle delete/move response
     function handleDeleteResponse(response, actionName) {
         try {
             const data = response ? JSON.parse(response) : {};
             if (data.hasOwnProperty("error")) {
-                bootstrapAlert(`[${data.error.code}] ${data.error.message}`, "danger");
+                bootstrapAlert(formatGraphError(data, `Failed to ${actionName.toLowerCase()} email`), "danger");
             } else {
                 bootstrapToast("Email", `Email ${actionName.toLowerCase()} successfully`, "success");
-                // Clear email details and refresh email list
-                $('#email_details #email_subject').text('');
-                $('#email_details #email_from').text('');
-                $('#email_details #email_to').text('');
-                $('#email_details #email_date').text('');
-                $('#email_body').html('<center class="p-5">Select an email from the list</center>');
-                $('#email_attachments').hide();
-                $('#reply_button, #delete_button, #permanent_delete_button').hide();
-                
-                // Reload email list
-                fetchEmails();
+                clearSelectedEmail();
+                fetchEmails(true, true);
             }
         } catch (e) {
             // If parsing fails but the request was successful, it's likely an empty success response
             bootstrapToast("Email", `Email ${actionName.toLowerCase()} successfully`, "success");
-            // Clear email details and refresh email list
-            $('#email_details #email_subject').text('');
-            $('#email_details #email_from').text('');
-            $('#email_details #email_to').text('');
-            $('#email_details #email_date').text('');
-            $('#email_body').html('<center class="p-5">Select an email from the list</center>');
-            $('#email_attachments').hide();
-            $('#reply_button, #delete_button, #permanent_delete_button').hide();
-            
-            // Reload email list
-            fetchEmails();
+            clearSelectedEmail();
+            fetchEmails(true, true);
         }
         
         // Re-enable buttons
-        $('#reply_button, #delete_button, #permanent_delete_button').prop('disabled', false);
+        $('#reply_button, #toggle_read_button, #toggle_flag_button, #archive_button, #delete_button, #permanent_delete_button').prop('disabled', false);
+    }
+
+    function clearSelectedEmail() {
+        $("#email_list_group .list-group-item.active").removeClass("active");
+        $('#email_details #email_subject').text('');
+        $('#email_details #email_from').text('');
+        $('#email_details #email_to').text('');
+        $('#email_details #email_date').text('');
+        $('#email_cc_container').hide();
+        $('#email_body').html('<center class="p-5">Select an email from the list</center>');
+        $('#email_attachments').hide();
+        $('#reply_button, #toggle_read_button, #toggle_flag_button, #archive_button, #delete_button, #permanent_delete_button').hide();
+    }
+
+    function toggleFlagStatus() {
+        const accessTokenId = $('#access_token_id').val();
+        const mailboxPath = getMailboxPath();
+        const emailData = getActiveEmailData();
+        if (!emailData) {
+            return;
+        }
+
+        const messageId = emailData.id;
+        if (!messageId) {
+            bootstrapAlert("No email selected", "warning");
+            return;
+        }
+
+        const currentlyFlagged = emailData.flag && emailData.flag.flagStatus === "flagged";
+        const updateBody = {
+            flag: {
+                flagStatus: currentlyFlagged ? "notFlagged" : "flagged"
+            }
+        };
+
+        $('#toggle_flag_button').prop('disabled', true);
+
+        $.ajax({
+            type: "POST",
+            url: "/api/generic_graph",
+            data: {
+                access_token_id: accessTokenId,
+                graph_uri: `https://graph.microsoft.com/v1.0/${mailboxPath}/messages/${encodeURIComponent(messageId)}`,
+                body: JSON.stringify(updateBody),
+                method: "PATCH"
+            },
+            success: function(response) {
+                try {
+                    const data = response ? JSON.parse(response) : {};
+                    if (data.hasOwnProperty("error")) {
+                        bootstrapAlert(formatGraphError(data, "Failed to update flag"), "danger");
+                        return;
+                    }
+
+                    const newFlag = data.flag || updateBody.flag;
+                    const isFlagged = newFlag.flagStatus === "flagged";
+                    updateFlagButtonText(isFlagged);
+
+                    const selectedEmail = $("#email_list_group .list-group-item.active");
+                    if (selectedEmail.length) {
+                        updateActiveEmailData({ flag: newFlag });
+                        updateListItemFlag(selectedEmail, isFlagged);
+                    }
+
+                    bootstrapToast("Email", isFlagged ? "Flagged" : "Flag removed", "success");
+                } catch (e) {
+                    bootstrapAlert("Error processing flag response", "danger");
+                }
+            },
+            error: function(xhr, status, error) {
+                bootstrapAlert(`Failed to update flag: ${error}`, "danger");
+            },
+            complete: function() {
+                $('#toggle_flag_button').prop('disabled', false);
+            }
+        });
     }
 
     // Function to toggle read/unread status of an email
@@ -1355,6 +1704,9 @@
         
         // Get the raw email data
         const emailData = getActiveEmailData();
+        if (!emailData) {
+            return;
+        }
         const messageId = emailData.id;
         
         if (!messageId) {
@@ -1384,10 +1736,9 @@
                 try {
                     const data = response ? JSON.parse(response) : {};
                     if (data.hasOwnProperty("error")) {
-                        bootstrapAlert(`[${data.error.code}] ${data.error.message}`, "danger");
+                        bootstrapAlert(formatGraphError(data, "Failed to update read status"), "danger");
                     } else {
-                        // Update UI to reflect the change
-                        const newReadStatus = !emailData.isRead;
+                        const newReadStatus = data.hasOwnProperty("isRead") ? data.isRead : !emailData.isRead;
                         
                         // Update button text
                         updateReadButtonText(newReadStatus);
@@ -1399,8 +1750,7 @@
                             bootstrapAlert("No email selected", "warning");
                             return;
                         }
-                        emailData.isRead = newReadStatus;
-                        selectedEmail[0].querySelector(".raw-email").textContent = JSON.stringify(emailData);
+                        updateActiveEmailData({ isRead: newReadStatus });
                         
                         // Update the list item styling
                         if (newReadStatus) {
@@ -1427,4 +1777,4 @@
     }
 </script>
 
-{%endblock content%} 
+{%endblock content%}
