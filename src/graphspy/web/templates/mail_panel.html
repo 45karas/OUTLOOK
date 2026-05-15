@@ -136,7 +136,7 @@
             min-height: 42px;
             border-radius: 5px;
             display: grid;
-            grid-template-columns: 28px 1fr auto;
+            grid-template-columns: 1fr auto;
             align-items: center;
             gap: .4rem;
             padding: 0 .6rem;
@@ -370,18 +370,6 @@
         let messages = [];
         let selectedId = null;
 
-        const folderIcons = {
-            inbox: 'Inbox',
-            drafts: 'Drafts',
-            sentitems: 'Sent',
-            sent: 'Sent',
-            deleteditems: 'Deleted',
-            deleted: 'Deleted',
-            junkemail: 'Junk',
-            junk: 'Junk',
-            archive: 'Archive'
-        };
-
         function escapeHtml(value) {
             return String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
         }
@@ -425,15 +413,20 @@
                 return;
             }
             const sorted = [...folders].sort((a, b) => folderRank(a) - folderRank(b) || String(a.displayName).localeCompare(String(b.displayName)));
-            if (!activeFolderId) {
-                activeFolderId = (sorted.find(folder => String(folder.displayName || '').toLowerCase() === 'inbox') || sorted[0]).id;
-            }
+            const allButton = document.createElement('button');
+            allButton.className = `folder-row ${activeFolderId ? '' : 'active'}`;
+            allButton.innerHTML = '<span>All Mail</span><span class="count"></span>';
+            allButton.addEventListener('click', () => {
+                activeFolderId = '';
+                selectedId = null;
+                renderFolders();
+                loadMail();
+            });
+            folderList.appendChild(allButton);
             for (const folder of sorted) {
                 const button = document.createElement('button');
                 button.className = `folder-row ${String(folder.id) === String(activeFolderId) ? 'active' : ''}`;
-                const key = String(folder.displayName || '').toLowerCase().replace(/\s+/g, '');
                 button.innerHTML = `
-                    <span>${escapeHtml(folderIcons[key] || 'Folder')}</span>
                     <span>${escapeHtml(folder.displayName || 'Folder')}</span>
                     <span class="count">${folder.unreadItemCount || folder.totalItemCount || ''}</span>
                 `;

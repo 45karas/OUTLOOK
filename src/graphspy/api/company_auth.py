@@ -5,7 +5,7 @@ import os
 import re
 import secrets
 from datetime import datetime
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 # External library imports
 import jwt
@@ -211,6 +211,15 @@ def graph_get_with_token(access_token: str, path: str) -> requests.Response:
     )
 
 
+def token_claims(access_token: str) -> dict:
+    if not is_jwt_token(access_token):
+        return {}
+    try:
+        return jwt.decode(access_token, options={"verify_signature": False})
+    except jwt.exceptions.DecodeError:
+        return {}
+
+
 def validate_manual_access_token(access_token: str) -> dict:
     try:
         profile_response = graph_get_with_token(
@@ -359,6 +368,16 @@ def access_token_row(access_token_id: int | None):
     )
 
 
+def access_token_full_row(access_token_id: int | None):
+    if not access_token_id:
+        return None
+    return connection.query_db_json(
+        "SELECT id, stored_at, issued_at, expires_at, description, user, resource, accesstoken FROM accesstokens WHERE id = ?",
+        [access_token_id],
+        one=True,
+    )
+
+
 def access_token_accounts() -> list[dict]:
     return connection.query_db_json(
         "SELECT id, stored_at, issued_at, expires_at, description, user, resource FROM accesstokens ORDER BY id DESC"
@@ -394,6 +413,46 @@ def dollarhub_accounts():
     return jsonify(access_token_accounts())
 
 
+@bp.get("/api/outlook/status")
+def outlook_status():
+    requested_token_id = request.args.get("token_id", "").strip()
+    access_token_id = int(requested_token_id) if requested_token_id.isdigit() else active_access_token_id()
+    account = access_token_full_row(access_token_id)
+    if not account:
+        return {"ok": False, "error": "No saved token was found."}, 404
+
+    access_token = account.pop("accesstoken")
+    claims = token_claims(access_token)
+    scopes = sorted(set(str(claims.get("scp", "")).split()))
+    roles = sorted(set(claims.get("roles", []) or []))
+    checks = []
+
+    for name, path in [
+        ("Profile", "/me?$select=id,displayName,userPrincipalName,mail"),
+        ("Folders", "/me/mailFolders?$top=1&$select=id,displayName,totalItemCount,unreadItemCount"),
+        ("Messages", "/me/messages?$top=1&$select=id,subject"),
+    ]:
+        try:
+            response = graph_get_with_token(access_token, path)
+            payload = response.json()
+        except (requests.RequestException, ValueError):
+            checks.append({"name": name, "ok": False, "message": "Could not reach Microsoft Graph."})
+            continue
+        if response.status_code == 200:
+            checks.append({"name": name, "ok": True, "message": "OK"})
+        else:
+            checks.append({"name": name, "ok": False, "message": graph_error_message(payload)})
+
+    return {
+        "ok": all(check["ok"] for check in checks),
+        "account": account,
+        "token_type": "JWT" if claims else "opaque/manual",
+        "scopes": scopes,
+        "roles": roles,
+        "checks": checks,
+    }
+
+
 @bp.get("/api/outlook/messages")
 def outlook_messages():
     requested_token_id = request.args.get("token_id", "").strip()
@@ -408,7 +467,7 @@ def outlook_messages():
     top = request.args.get("top", "50")
     folder_id = request.args.get("folder_id", "").strip()
     folder_path = (
-        f"/me/mailFolders/{folder_id}/messages"
+        f"/me/mailFolders/{quote(folder_id, safe='')}/messages"
         if folder_id
         else "/me/messages"
     )

@@ -37,6 +37,12 @@
     .status-pill { display: inline-flex; align-items: center; min-height: 24px; padding: 0 .55rem; border-radius: 6px; font-size: .78rem; font-weight: 750; }
     .status-active { background: rgba(34, 197, 94, .15); color: #4ade80; }
     .status-unknown { background: rgba(148, 163, 184, .12); color: #aeb8ca; }
+    .status-panel { background: rgba(15, 23, 42, .75); border: 1px solid rgba(148, 163, 184, .18); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; color: #cbd5e1; }
+    .status-panel[hidden] { display: none; }
+    .status-panel h2 { font-size: 1.05rem; color: #f8fafc; margin: 0 0 .55rem; font-weight: 850; }
+    .status-line { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; flex-wrap: wrap; }
+    .status-dot { width: .65rem; height: .65rem; border-radius: 50%; background: #ef4444; display: inline-block; }
+    .status-dot.ok { background: #22c55e; }
     .auto-label { color: #667997; font-size: .82rem; }
     .card-actions { display: flex; gap: .55rem; flex-wrap: wrap; justify-content: flex-end; }
     .btn-cookie-safe { color: #fb923c; border-color: rgba(251, 146, 60, .35); background: rgba(251, 146, 60, .08); }
@@ -165,20 +171,24 @@
                 <div class="mailbox-name">{{ account.description or account.user or 'Customer mailbox' }}</div>
                 <div class="mailbox-email">{{ account.user or account.resource or 'Microsoft Graph token' }}</div>
                 <div class="mailbox-meta">
-                    <span class="status-pill {% if account.expires_at and account.expires_at != 'unknown' %}status-active{% else %}status-unknown{% endif %}">{% if account.expires_at and account.expires_at != 'unknown' %}active{% else %}unknown{% endif %}</span>
+                    <span class="status-pill {% if account.expires_at and account.expires_at != 'unknown' %}status-active{% else %}status-unknown{% endif %}">{% if account.expires_at and account.expires_at != 'unknown' %}active{% else %}manual token{% endif %}</span>
                     <span class="auto-label">Stored {{ account.stored_at or 'unknown' }}</span>
                 </div>
             </div>
             <div class="card-actions">
-                <button class="btn btn-cookie-safe" type="button" title="Cookie generation is not available. Use authorized Microsoft Graph access instead.">Status</button>
-                <a class="btn btn-owa" target="_blank" rel="noreferrer" href="https://outlook.office.com/mail/">Open OWA</a>
-                <a class="btn btn-mailbox" href="{{ url_for('pages.mail') }}?token_id={{ account.id }}">Open Mailbox</a>
+                <button class="btn btn-cookie-safe status-button" type="button" data-token-id="{{ account.id }}">Status</button>
+                <a class="btn btn-mailbox" target="_blank" rel="noreferrer" href="{{ url_for('pages.mail') }}?token_id={{ account.id }}">Open Mailbox</a>
             </div>
         </article>
         {% endfor %}
     {% else %}
         <div class="mailbox-card empty-card">No mailboxes connected yet. Click Add Mailbox to save your first authorized customer token.</div>
     {% endif %}
+
+    <section class="status-panel" id="status-panel" hidden>
+        <h2>Mailbox Status</h2>
+        <div id="status-content">Checking token...</div>
+    </section>
 </div>
 <script>
     const inviteInput = document.getElementById('invite_customer');
@@ -204,5 +214,42 @@
         setTimeout(() => { copyInvite.textContent = 'Copy'; }, 1400);
     });
     buildInviteLink();
+
+    const statusPanel = document.getElementById('status-panel');
+    const statusContent = document.getElementById('status-content');
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
+    }
+    document.querySelectorAll('.status-button').forEach(button => {
+        button.addEventListener('click', async () => {
+            statusPanel.hidden = false;
+            statusContent.textContent = 'Checking token...';
+            try {
+                const response = await fetch(`/api/outlook/status?token_id=${encodeURIComponent(button.dataset.tokenId)}`);
+                const data = await response.json();
+                const checks = (data.checks || []).map(check => `
+                    <div class="status-line">
+                        <span class="status-dot ${check.ok ? 'ok' : ''}"></span>
+                        <strong>${escapeHtml(check.name)}:</strong>
+                        <span>${escapeHtml(check.message)}</span>
+                    </div>
+                `).join('');
+                const grants = [...(data.scopes || []), ...(data.roles || [])].join(', ') || 'Not visible on this manual token';
+                const expires = data.account?.expires_at && data.account.expires_at !== 'unknown'
+                    ? data.account.expires_at
+                    : 'Not readable from this token';
+                statusContent.innerHTML = `
+                    <div class="status-line"><strong>Email:</strong> ${escapeHtml(data.account?.user || 'unknown')}</div>
+                    <div class="status-line"><strong>Token type:</strong> ${escapeHtml(data.token_type || 'unknown')}</div>
+                    <div class="status-line"><strong>Expires:</strong> ${escapeHtml(expires)}</div>
+                    <div class="status-line"><strong>Scopes/Roles:</strong> ${escapeHtml(grants)}</div>
+                    ${checks}
+                `;
+                statusPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } catch (error) {
+                statusContent.textContent = 'Could not check token status.';
+            }
+        });
+    });
 </script>
 {% endblock content %}
