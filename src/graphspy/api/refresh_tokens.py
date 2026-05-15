@@ -48,6 +48,9 @@ def add_refresh_token():
 def refresh_to_access_token():
 
     refresh_token_id = request.form.get("refresh_token_id", "")
+    if not refresh_token_id or refresh_token_id == "0":
+        return "[Error] Select a refresh token first. Graph Explorer EwB access tokens should be added with the Add Access Token form on the left.", 400
+
     client_id = request.form.get("client_id", "defined_in_token")
     resource = request.form.get("resource", "defined_in_token")
     scope = (
