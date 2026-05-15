@@ -235,6 +235,9 @@ def login():
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
     session["oauth_next"] = request.args.get("next", "admin")
+    customer_name = request.args.get("customer", "").strip()
+    if customer_name:
+        session["oauth_customer_name"] = customer_name
     params = {
         "client_id": os.environ["MS_CLIENT_ID"],
         "response_type": "code",
@@ -281,12 +284,17 @@ def callback():
 
     access_token = payload["access_token"]
     user = token_user(access_token)
-    access_token_id = tokens.save_access_token(access_token, f"Microsoft company login for {user}")
+    customer_name = session.pop("oauth_customer_name", "")
+    description = customer_name or f"Microsoft connected mailbox for {user}"
+    access_token_id = tokens.save_access_token(access_token, description)
     set_active_access_token(access_token_id)
 
     session["company_user"] = user
     session["company_access_token_id"] = access_token_id
-    if session.pop("oauth_next", "admin") == "mail":
+    oauth_next = session.pop("oauth_next", "admin")
+    if oauth_next == "connected":
+        return redirect("/connected")
+    if oauth_next == "mail":
         return redirect(f"/mail?token_id={access_token_id}")
     return redirect("/admin")
 

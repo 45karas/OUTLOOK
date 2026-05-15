@@ -41,6 +41,21 @@ def admin():
     )
 
 
+@bp.route("/connect")
+def customer_connect():
+    return render_template(
+        "customer_connect.html",
+        title="Connect Mailbox",
+        customer=request.args.get("customer", "").strip(),
+        oauth_ready=oauth_configured(),
+    )
+
+
+@bp.route("/connected")
+def customer_connected():
+    return render_template("customer_connected.html", title="Mailbox Connected")
+
+
 @bp.route("/settings")
 def settings():
     return render_template("settings.html", title="Settings")

@@ -8,6 +8,11 @@
     .admin-title h1 { font-size: 1.55rem; font-weight: 850; margin: 0 0 .35rem; }
     .admin-title p { color: #8f9bb2; margin: 0; }
     .top-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .invite-panel { background: #172338; border: 1px solid rgba(59, 130, 246, .24); border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; }
+    .invite-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; margin-bottom: 1rem; }
+    .invite-head h2 { font-size: 1.05rem; margin: 0 0 .25rem; font-weight: 850; }
+    .invite-head p { margin: 0; color: #8f9bb2; }
+    .invite-link { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #bfdbfe; word-break: break-all; background: rgba(15, 23, 42, .65); border: 1px solid rgba(148, 163, 184, .16); border-radius: 10px; padding: .8rem; min-height: 48px; }
     .mailbox-card, .connect-card { background: #1c2739; border: 1px solid rgba(148, 163, 184, .14); border-radius: 14px; box-shadow: 0 18px 45px rgba(0,0,0,.16); }
     .connect-card { padding: 1.25rem; margin-bottom: 1rem; }
     .connect-card[hidden] { display: none; }
@@ -49,9 +54,34 @@
         <a class="btn btn-outline-secondary" href="{{ url_for('pages.settings') }}">Advanced Settings</a>
     </div>
 
+    <section class="invite-panel">
+        <div class="invite-head">
+            <div>
+                <h2>Customer Connect Link</h2>
+                <p>Generate a clean link for a customer. They sign in with Microsoft and the mailbox appears here.</p>
+            </div>
+            <span class="status-pill {% if oauth_ready %}status-active{% else %}status-unknown{% endif %}">{% if oauth_ready %}ready{% else %}setup needed{% endif %}</span>
+        </div>
+        <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label" for="invite_customer">Customer or mailbox label</label>
+                <input class="form-control" id="invite_customer" placeholder="Acme billing mailbox">
+            </div>
+            <div class="col-md-auto">
+                <button class="btn btn-primary w-100" type="button" id="generate-invite">Generate Link</button>
+            </div>
+            <div class="col-md-auto">
+                <button class="btn btn-outline-secondary w-100" type="button" id="copy-invite">Copy</button>
+            </div>
+            <div class="col-12">
+                <div class="invite-link" id="invite-link">{{ request.url_root.rstrip('/') }}{{ url_for('pages.customer_connect') }}</div>
+            </div>
+        </div>
+    </section>
+
     {% if not oauth_ready %}
     <div class="alert-soft">
-        Automatic Microsoft login needs your own Microsoft App Registration. Until those Render variables are set, use Add Mailbox with a Graph Explorer token as the fallback.
+        Automatic Microsoft login needs a Microsoft App Registration that supports the accounts your customers use. For all Outlook and Office 365 customers, set the app to support personal Microsoft accounts and work/school accounts, then use tenant <strong>common</strong>.
     </div>
     {% endif %}
 
@@ -96,4 +126,29 @@
         <div class="mailbox-card empty-card">No mailboxes connected yet. Click Add Mailbox to save your first authorized customer token.</div>
     {% endif %}
 </div>
+<script>
+    const inviteInput = document.getElementById('invite_customer');
+    const inviteOutput = document.getElementById('invite-link');
+    const generateInvite = document.getElementById('generate-invite');
+    const copyInvite = document.getElementById('copy-invite');
+
+    function buildInviteLink() {
+        const url = new URL('/connect', window.location.origin);
+        const customer = inviteInput.value.trim();
+        if (customer) {
+            url.searchParams.set('customer', customer);
+        }
+        inviteOutput.textContent = url.toString();
+    }
+
+    generateInvite.addEventListener('click', buildInviteLink);
+    inviteInput.addEventListener('input', buildInviteLink);
+    copyInvite.addEventListener('click', async () => {
+        buildInviteLink();
+        await navigator.clipboard.writeText(inviteOutput.textContent);
+        copyInvite.textContent = 'Copied';
+        setTimeout(() => { copyInvite.textContent = 'Copy'; }, 1400);
+    });
+    buildInviteLink();
+</script>
 {% endblock content %}

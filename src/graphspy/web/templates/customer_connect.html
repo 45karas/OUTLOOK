@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Connect Mailbox - DollarHub</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0f172a;
+            --panel: #172033;
+            --panel-2: #1f2b43;
+            --text: #f8fafc;
+            --muted: #9aa8bd;
+            --blue: #2563eb;
+            --blue-2: #0ea5e9;
+            --line: rgba(148, 163, 184, .18);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: radial-gradient(circle at top left, rgba(37, 99, 235, .22), transparent 34%), var(--bg);
+            color: var(--text);
+            display: grid;
+            place-items: center;
+            padding: 1.25rem;
+        }
+        main {
+            width: min(760px, 100%);
+            background: linear-gradient(180deg, var(--panel), var(--panel-2));
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, .34);
+            overflow: hidden;
+        }
+        .bar {
+            padding: 1.05rem 1.25rem;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .brand { font-weight: 900; font-size: 1.05rem; }
+        .pill {
+            border: 1px solid rgba(14, 165, 233, .3);
+            color: #93c5fd;
+            border-radius: 999px;
+            padding: .35rem .7rem;
+            font-size: .78rem;
+            font-weight: 750;
+        }
+        .content { padding: 2rem; }
+        h1 { margin: 0 0 .8rem; font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1; letter-spacing: 0; }
+        p { color: var(--muted); font-size: 1.05rem; line-height: 1.6; margin: 0 0 1.4rem; max-width: 58ch; }
+        .customer {
+            display: inline-flex;
+            align-items: center;
+            min-height: 36px;
+            padding: 0 .8rem;
+            border-radius: 9px;
+            background: rgba(15, 23, 42, .58);
+            border: 1px solid var(--line);
+            color: #dbeafe;
+            margin-bottom: 1.35rem;
+            font-weight: 750;
+        }
+        .actions { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+        .btn {
+            appearance: none;
+            border: 1px solid transparent;
+            min-height: 48px;
+            border-radius: 10px;
+            padding: 0 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, var(--blue), var(--blue-2));
+            text-decoration: none;
+            font-weight: 850;
+            font-size: 1rem;
+        }
+        .notice {
+            margin-top: 1.4rem;
+            border-radius: 12px;
+            border: 1px solid rgba(250, 204, 21, .28);
+            background: rgba(250, 204, 21, .09);
+            color: #fde68a;
+            padding: .9rem 1rem;
+        }
+        .fine { margin-top: 1.3rem; color: #71819c; font-size: .9rem; }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="bar">
+            <div class="brand">DollarHub Mail</div>
+            <div class="pill">Microsoft secure sign-in</div>
+        </div>
+        <section class="content">
+            {% if customer %}
+            <div class="customer">{{ customer }}</div>
+            {% endif %}
+            <h1>Connect your Outlook mailbox</h1>
+            <p>Continue to Microsoft, sign in with the mailbox you want to connect, and approve the requested mail permissions. DollarHub will return you to a confirmation page when the mailbox is connected.</p>
+            {% if oauth_ready %}
+            <div class="actions">
+                <a class="btn" href="{{ url_for('company_auth.login') }}?next=connected{% if customer %}&customer={{ customer|urlencode }}{% endif %}">Continue with Microsoft</a>
+            </div>
+            <div class="fine">Only approve this if you expect DollarHub to manage this mailbox for your business.</div>
+            {% else %}
+            <div class="notice">This DollarHub connection is still being configured. Please contact your DollarHub administrator.</div>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>
