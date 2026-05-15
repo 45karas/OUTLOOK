@@ -22,11 +22,16 @@ def favicon():
 
 
 @bp.route("/")
-def settings():
+def home():
+    if session.get("company_user"):
+        return redirect("/outlook_graph?autoload=1")
     if oauth_configured():
-        if session.get("company_user"):
-            return redirect("/outlook_graph?autoload=1")
-        return render_template("company_login.html", title="Company Outlook Login")
+        return redirect("/login")
+    return redirect("/setup-login")
+
+
+@bp.route("/settings")
+def settings():
     return render_template("settings.html", title="Settings")
 
 
@@ -138,4 +143,6 @@ def entra_groups():
 @bp.route("/entra_roles")
 def entra_roles():
     return render_template('entra_roles.html', title="Entra ID Roles")
+
+
 
