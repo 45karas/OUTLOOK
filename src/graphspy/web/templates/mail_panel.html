@@ -160,6 +160,7 @@
             padding: .55rem .75rem;
             border-bottom: 1px solid var(--line);
             background: #fff;
+            flex-wrap: wrap;
         }
         .btn {
             min-height: 36px;
@@ -211,6 +212,16 @@
         .from, .subject, .preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .time { color: var(--blue); font-size: .88rem; }
         .preview { color: var(--muted); grid-column: 1 / -1; }
+        .folder-pill {
+            color: var(--muted);
+            font-size: .78rem;
+            margin-left: .35rem;
+        }
+        .action-status {
+            color: var(--muted);
+            font-size: .9rem;
+            margin-left: auto;
+        }
         .reading {
             min-width: 0;
             background: #fff;
@@ -310,11 +321,12 @@
             <section class="message-area">
                 <div class="toolbar">
                     <button class="btn btn-primary" type="button" id="new-mail">New mail</button>
-                    <button class="btn" type="button" disabled>Delete</button>
-                    <button class="btn" type="button" disabled>Archive</button>
-                    <button class="btn" type="button" disabled>Report</button>
-                    <button class="btn" type="button" disabled>Flag</button>
+                    <button class="btn" type="button" id="delete-message" disabled>Delete</button>
+                    <button class="btn" type="button" id="archive-message" disabled>Archive</button>
+                    <button class="btn" type="button" id="mark-read-message" disabled>Mark read</button>
+                    <button class="btn" type="button" id="flag-message" disabled>Flag</button>
                     <button class="btn" type="button" id="reload-folder">Reload</button>
+                    <span class="action-status" id="action-status"></span>
                 </div>
                 <div class="messages">
                     <div class="focus-tabs">
@@ -364,6 +376,13 @@
         const folderList = document.getElementById('folder-list');
         const accountLabel = document.getElementById('account-label');
         const searchInput = document.getElementById('search-input');
+        const actionStatus = document.getElementById('action-status');
+        const actionButtons = {
+            delete: document.getElementById('delete-message'),
+            archive: document.getElementById('archive-message'),
+            markRead: document.getElementById('mark-read-message'),
+            flag: document.getElementById('flag-message'),
+        };
         const urlParams = new URLSearchParams(window.location.search);
         let activeTokenId = urlParams.get('token_id') || '{{ token_id or "" }}';
         let activeFolderId = '';
@@ -433,6 +452,29 @@
             return [...displayRecipients, ...graphRecipients].filter(Boolean).join(', ');
         }
 
+        function selectedMessage() {
+            return messages.find(item => item.id === selectedId) || null;
+        }
+
+        function isFlagged(message) {
+            return message?.flag?.flagStatus === 'flagged';
+        }
+
+        function updateActionButtons() {
+            const message = selectedMessage();
+            const hasMessage = Boolean(message);
+            Object.values(actionButtons).forEach(button => {
+                button.disabled = !hasMessage;
+            });
+            if (message) {
+                actionButtons.markRead.textContent = message.isRead ? 'Mark unread' : 'Mark read';
+                actionButtons.flag.textContent = isFlagged(message) ? 'Unflag' : 'Flag';
+            } else {
+                actionButtons.markRead.textContent = 'Mark read';
+                actionButtons.flag.textContent = 'Flag';
+            }
+        }
+
         function formatDate(value) {
             if (!value) return '';
             const date = new Date(value);
@@ -461,6 +503,7 @@
             const clean = cleanError(message);
             mailList.innerHTML = `<div class="error"><div class="error-card">${escapeHtml(clean)}<br><br>Use a fresh Microsoft Graph token with Mail.Read to load mail, and Mail.Send to send.</div></div>`;
             readingPane.innerHTML = `<div class="empty"><div><h2>Mailbox needs a valid token</h2><p>${escapeHtml(clean)}</p></div></div>`;
+            updateActionButtons();
         }
 
         function renderFolders() {
@@ -513,22 +556,26 @@
             if (!visible.length) {
                 mailList.innerHTML = '<div class="empty">No emails found in this folder.</div>';
                 readingPane.innerHTML = '<div class="empty"><div><h2>No message selected</h2><p>Select a folder or refresh the mailbox.</p></div></div>';
+                updateActionButtons();
                 return;
             }
             mailList.innerHTML = '';
             for (const message of visible) {
                 const row = document.createElement('button');
                 row.className = `mail-row ${message.isRead ? '' : 'unread'} ${selectedId === message.id ? 'active' : ''}`;
+                const folderName = message.dollarhubFolderName ? `<span class="folder-pill">${escapeHtml(message.dollarhubFolderName)}</span>` : '';
+                const flagText = isFlagged(message) ? 'Flagged' : '';
                 row.innerHTML = `
                     <span class="from">${escapeHtml(senderName(message))}</span>
                     <span class="time">${escapeHtml(formatDate(messageDate(message)))}</span>
-                    <span class="subject">${escapeHtml(subjectText(message))}</span>
+                    <span class="subject">${escapeHtml(subjectText(message))}${folderName}</span>
                     <span></span>
-                    <span class="preview">${escapeHtml(messagePreview(message))}</span>
+                    <span class="preview">${escapeHtml([flagText, messagePreview(message)].filter(Boolean).join(' - '))}</span>
                 `;
                 row.addEventListener('click', () => selectMessage(message.id));
                 mailList.appendChild(row);
             }
+            updateActionButtons();
         }
 
         async function loadMessageDetails(id) {
@@ -557,18 +604,39 @@
             if (fullMessage) {
                 message = { ...message, ...fullMessage };
             }
+            updateActionButtons();
             readingPane.innerHTML = `
                 <div class="message-head">
                     <div class="muted">${escapeHtml(formatDate(messageDate(message)))}</div>
                     <h1>${escapeHtml(subjectText(message))}</h1>
                     <div><strong>From:</strong> ${escapeHtml(senderName(message))} &lt;${escapeHtml(senderAddress(message))}&gt;</div>
                     <div class="muted"><strong>To:</strong> ${escapeHtml(recipientsText(message))}</div>
-                    ${message.webLink ? `<p><a class="btn" target="_blank" rel="noreferrer" href="${escapeHtml(message.webLink)}">Open in Outlook</a></p>` : ''}
                 </div>
                 <iframe id="message-frame" class="message-frame" sandbox=""></iframe>
             `;
             const frame = document.getElementById('message-frame');
-            frame.srcdoc = message.body?.content || `<p>${escapeHtml(messagePreview(message))}</p>`;
+            frame.srcdoc = messageFrameDocument(message);
+        }
+
+        function messageFrameDocument(message) {
+            const isText = String(message.body?.contentType || '').toLowerCase() === 'text';
+            const content = message.body?.content
+                ? (isText ? `<pre>${escapeHtml(message.body.content)}</pre>` : message.body.content)
+                : `<p>${escapeHtml(messagePreview(message))}</p>`;
+            return `<!doctype html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { margin: 0; font: 15px/1.5 "Segoe UI", Arial, sans-serif; color: #242424; overflow-wrap: anywhere; }
+                        img { max-width: 100%; height: auto; }
+                        table { max-width: 100%; }
+                        pre { white-space: pre-wrap; font: inherit; }
+                        a { color: #0f6cbd; word-break: break-word; }
+                    </style>
+                </head>
+                <body>${content}</body>
+                </html>`;
         }
 
         async function loadAccounts() {
@@ -594,13 +662,14 @@
 
         async function loadFolders() {
             folderList.innerHTML = '<div class="muted" style="padding:.75rem">Loading folders...</div>';
+            const previousFolderId = activeFolderId;
             const response = await fetch(`/api/outlook/folders?token_id=${encodeURIComponent(activeTokenId)}`);
             const data = await response.json();
             if (!response.ok || data.error) {
                 throw new Error(data.error?.message || data.error || 'Unable to load folders');
             }
             folders = data.value || [];
-            activeFolderId = '';
+            activeFolderId = previousFolderId && folders.some(folder => String(folder.id) === String(previousFolderId)) ? previousFolderId : '';
             renderFolders();
         }
 
@@ -615,7 +684,7 @@
             try {
                 const folderQuery = activeFolderId ? `&folder_id=${encodeURIComponent(activeFolderId)}` : '';
                 const allQuery = activeFolderId ? '' : '&all=1';
-                const response = await fetch(`/api/outlook/messages?top=100&token_id=${encodeURIComponent(activeTokenId)}${folderQuery}${allQuery}`);
+                const response = await fetch(`/api/outlook/messages?top=200&max=5000&token_id=${encodeURIComponent(activeTokenId)}${folderQuery}${allQuery}`);
                 const data = await response.json();
                 if (!response.ok || data.error) {
                     throw new Error(data.error?.message || data.error || 'Unable to load mailbox');
@@ -625,7 +694,7 @@
                 selectedId = messages.some(message => message.id === previousSelectedId) ? previousSelectedId : messages[0]?.id || null;
                 renderList();
                 if (selectedId) await selectMessage(selectedId);
-                refreshStatus.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+                refreshStatus.textContent = `Loaded ${messages.length} - Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
             } catch (error) {
                 showError(error.message);
                 refreshStatus.textContent = 'Refresh failed';
@@ -653,6 +722,16 @@
         });
         document.getElementById('refresh-mail').addEventListener('click', reloadAll);
         document.getElementById('reload-folder').addEventListener('click', loadMail);
+        actionButtons.delete.addEventListener('click', () => runMessageAction('delete'));
+        actionButtons.archive.addEventListener('click', () => runMessageAction('archive'));
+        actionButtons.markRead.addEventListener('click', () => {
+            const message = selectedMessage();
+            runMessageAction(message?.isRead ? 'mark_unread' : 'mark_read');
+        });
+        actionButtons.flag.addEventListener('click', () => {
+            const message = selectedMessage();
+            runMessageAction(isFlagged(message) ? 'unflag' : 'flag');
+        });
         searchInput.addEventListener('input', renderList);
         document.getElementById('new-mail').addEventListener('click', () => {
             document.getElementById('compose-panel').style.display = 'block';
@@ -690,11 +769,55 @@
                     document.getElementById('send-form').reset();
                     document.getElementById('compose-panel').style.display = 'none';
                     status.textContent = '';
+                    loadMail();
                 }, 900);
             } catch (error) {
                 status.textContent = cleanError(error.message);
             }
         });
+        async function runMessageAction(action) {
+            const message = selectedMessage();
+            if (!message) return;
+            if (action === 'delete' && !confirm('Delete this email from this mailbox?')) return;
+            actionStatus.textContent = 'Working...';
+            try {
+                const response = await fetch('/api/outlook/message-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token_id: activeTokenId,
+                        message_id: message.id,
+                        action,
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok || data.error) {
+                    throw new Error(data.error || 'Mailbox action failed.');
+                }
+                const index = messages.findIndex(item => item.id === message.id);
+                if (action === 'delete' || action === 'archive') {
+                    messages = messages.filter(item => item.id !== message.id);
+                    selectedId = messages[index]?.id || messages[index - 1]?.id || messages[0]?.id || null;
+                    renderList();
+                    if (selectedId) await selectMessage(selectedId);
+                    else readingPane.innerHTML = '<div class="empty"><div><h2>No message selected</h2><p>Select another email.</p></div></div>';
+                    loadFolders();
+                } else {
+                    if (index >= 0) {
+                        if (action === 'mark_read') messages[index].isRead = true;
+                        if (action === 'mark_unread') messages[index].isRead = false;
+                        if (action === 'flag') messages[index].flag = { flagStatus: 'flagged' };
+                        if (action === 'unflag') messages[index].flag = { flagStatus: 'notFlagged' };
+                    }
+                    renderList();
+                    if (selectedId) await selectMessage(selectedId);
+                }
+                actionStatus.textContent = 'Done';
+                setTimeout(() => { actionStatus.textContent = ''; }, 1600);
+            } catch (error) {
+                actionStatus.textContent = cleanError(error.message);
+            }
+        }
         reloadAll();
         autoRefreshTimer = setInterval(() => {
             if (document.hidden || document.getElementById('compose-panel').style.display === 'block') return;

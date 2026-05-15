@@ -214,6 +214,16 @@ def graph_get_with_token(access_token: str, path: str) -> requests.Response:
     )
 
 
+def graph_headers(access_token: str, content_type: bool = False) -> dict:
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+    }
+    if content_type:
+        headers["Content-Type"] = "application/json"
+    return headers
+
+
 def first_present(*values):
     for value in values:
         if value not in (None, "", [], {}):
@@ -400,6 +410,101 @@ def hydrate_missing_messages(access_token: str, messages: list[dict], limit: int
             checked += 1
         hydrated.append(normalized)
     return hydrated
+
+
+def graph_get_json(uri: str, headers: dict) -> tuple[dict, int]:
+    response = requests.get(uri, headers=headers, timeout=30)
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"error": response.text or "Microsoft Graph returned an unreadable response."}
+    return payload, response.status_code
+
+
+def collect_mail_folders(headers: dict, max_folders: int = 160) -> list[dict]:
+    folders = []
+    seen = set()
+    queue = [
+        f"{GRAPH_BASE_URL}/me/mailFolders?$top=100&$select=id,displayName,parentFolderId,totalItemCount,unreadItemCount"
+    ]
+    while queue and len(folders) < max_folders:
+        uri = queue.pop(0)
+        try:
+            payload, status_code = graph_get_json(uri, headers)
+        except requests.RequestException:
+            break
+        if status_code >= 400:
+            break
+        for folder in payload.get("value", []):
+            folder_id = folder.get("id")
+            if not folder_id or folder_id in seen:
+                continue
+            seen.add(folder_id)
+            folders.append(folder)
+            queue.append(
+                f"{GRAPH_BASE_URL}/me/mailFolders/{quote(folder_id, safe='')}/childFolders"
+                "?$top=100&$select=id,displayName,parentFolderId,totalItemCount,unreadItemCount"
+            )
+            if len(folders) >= max_folders:
+                break
+        next_link = payload.get("@odata.nextLink")
+        if next_link:
+            queue.insert(0, next_link)
+    return folders
+
+
+def message_select_fields(include_body: bool = False) -> str:
+    fields = [
+        "id",
+        "subject",
+        "sender",
+        "from",
+        "replyTo",
+        "toRecipients",
+        "ccRecipients",
+        "receivedDateTime",
+        "sentDateTime",
+        "lastModifiedDateTime",
+        "bodyPreview",
+        "isRead",
+        "hasAttachments",
+        "importance",
+        "webLink",
+        "parentFolderId",
+        "flag",
+        "categories",
+    ]
+    if include_body:
+        fields.append("body")
+    return ",".join(fields)
+
+
+def fetch_messages_from_uri(
+    headers: dict,
+    uri: str,
+    max_messages: int,
+    folder_name: str = "",
+) -> tuple[list[dict], str | None]:
+    values = []
+    next_link = uri
+    error = None
+    while next_link and len(values) < max_messages:
+        try:
+            payload, status_code = graph_get_json(next_link, headers)
+        except requests.RequestException:
+            error = "DollarHub could not reach Microsoft Graph while loading messages."
+            break
+        if status_code >= 400:
+            _key, error = friendly_graph_error(payload if isinstance(payload, dict) else {})
+            break
+        for message in payload.get("value", []):
+            if folder_name:
+                message["dollarhubFolderName"] = folder_name
+            values.append(message)
+            if len(values) >= max_messages:
+                break
+        next_link = payload.get("@odata.nextLink")
+    return values, error
 
 
 def token_claims(access_token: str) -> dict:
@@ -657,81 +762,79 @@ def outlook_messages():
 
     top_raw = request.args.get("top", "100")
     try:
-        top = max(1, min(int(top_raw), 100))
+        top = max(1, min(int(top_raw), 250))
     except ValueError:
         top = 100
-    folder_id = request.args.get("folder_id", "").strip()
-    folder_path = (
-        f"/me/mailFolders/{quote(folder_id, safe='')}/messages"
-        if folder_id
-        else "/me/messages"
-    )
-    select_fields = ",".join(
-        [
-            "id",
-            "subject",
-            "sender",
-            "from",
-            "toRecipients",
-            "ccRecipients",
-            "receivedDateTime",
-            "sentDateTime",
-            "lastModifiedDateTime",
-            "bodyPreview",
-            "body",
-            "isRead",
-            "hasAttachments",
-            "importance",
-            "webLink",
-            "parentFolderId",
-        ]
-    )
-    uri = (
-        f"{GRAPH_BASE_URL}{folder_path}"
-        "?$orderby=receivedDateTime desc"
-        f"&$top={top}"
-        f"&$select={select_fields}"
-    )
-    headers = {
-        "Authorization": f"Bearer {row[0]}",
-        "Accept": "application/json",
-    }
+    max_raw = request.args.get("max", "2500")
     try:
-        response = requests.get(
-            uri,
-            headers=headers,
-            timeout=30,
-        )
-    except requests.RequestException:
-        return {"error": "DollarHub could not reach Microsoft Graph. Try again."}, 502
-
-    try:
-        payload = response.json()
+        max_messages = max(1, min(int(max_raw), 5000))
     except ValueError:
-        payload = {"error": response.text or "Microsoft Graph returned an unreadable response."}
+        max_messages = 2500
+    folder_id = request.args.get("folder_id", "").strip()
+    select_fields = message_select_fields(include_body=False)
+    headers = graph_headers(row[0])
 
-    if response.status_code >= 400:
-        error_key, message = friendly_graph_error(payload if isinstance(payload, dict) else {})
-        return {"error": message, "error_key": error_key}, response.status_code
-    if request.args.get("all") == "1" and isinstance(payload, dict):
-        values = payload.get("value", [])
-        next_link = payload.get("@odata.nextLink")
-        page_count = 1
-        while next_link and len(values) < 500 and page_count < 6:
-            try:
-                next_response = requests.get(next_link, headers=headers, timeout=30)
-                next_payload = next_response.json()
-            except (requests.RequestException, ValueError):
+    if request.args.get("all") == "1" and not folder_id:
+        folders = collect_mail_folders(headers)
+        folders_with_items = [folder for folder in folders if folder.get("totalItemCount") != 0]
+        per_folder_limit = (
+            max_messages
+            if len(folders_with_items) <= 1
+            else max(100, min(1000, (max_messages // len(folders_with_items)) + top))
+        )
+        values = []
+        seen_message_ids = set()
+        for folder in folders_with_items:
+            if len(values) >= max_messages:
                 break
-            if next_response.status_code >= 400:
-                break
-            values.extend(next_payload.get("value", []))
-            next_link = next_payload.get("@odata.nextLink")
-            page_count += 1
-        payload["value"] = values
+            folder_messages_uri = (
+                f"{GRAPH_BASE_URL}/me/mailFolders/{quote(folder.get('id', ''), safe='')}/messages"
+                "?$orderby=receivedDateTime desc"
+                f"&$top={top}"
+                f"&$select={select_fields}"
+            )
+            folder_values, _error = fetch_messages_from_uri(
+                headers,
+                folder_messages_uri,
+                min(per_folder_limit, max_messages - len(values)),
+                folder.get("displayName", ""),
+            )
+            for message in folder_values:
+                message_id = message.get("id")
+                if message_id and message_id in seen_message_ids:
+                    continue
+                if message_id:
+                    seen_message_ids.add(message_id)
+                values.append(message)
+        values.sort(
+            key=lambda item: item.get("receivedDateTime")
+            or item.get("sentDateTime")
+            or item.get("lastModifiedDateTime")
+            or "",
+            reverse=True,
+        )
+        payload = {"value": values, "dollarhubFolderCount": len(folders)}
+    else:
+        folder_path = (
+            f"/me/mailFolders/{quote(folder_id, safe='')}/messages"
+            if folder_id
+            else "/me/messages"
+        )
+        uri = (
+            f"{GRAPH_BASE_URL}{folder_path}"
+            "?$orderby=receivedDateTime desc"
+            f"&$top={top}"
+            f"&$select={select_fields}"
+        )
+        values, error = fetch_messages_from_uri(headers, uri, max_messages)
+        if error:
+            return {"error": error}, 400
+        payload = {"value": values}
+
     if isinstance(payload, dict) and isinstance(payload.get("value"), list):
         payload["value"] = hydrate_missing_messages(row[0], payload.get("value", []), limit=60)
         payload["dollarhubLoadedCount"] = len(payload["value"])
+        payload["dollarhubMaxRequested"] = max_messages
     return payload
 
 
@@ -744,26 +847,7 @@ def outlook_message(message_id):
     row = access_token_row(access_token_id)
     if not row:
         return {"error": "No active Microsoft token. Connect Outlook first."}, 401
-    select_fields = ",".join(
-        [
-            "id",
-            "subject",
-            "sender",
-            "from",
-            "replyTo",
-            "toRecipients",
-            "ccRecipients",
-            "receivedDateTime",
-            "sentDateTime",
-            "bodyPreview",
-            "body",
-            "isRead",
-            "hasAttachments",
-            "importance",
-            "webLink",
-            "parentFolderId",
-        ]
-    )
+    select_fields = message_select_fields(include_body=True)
     uri = f"{GRAPH_BASE_URL}/me/messages/{quote(message_id, safe='')}?$select={select_fields}"
     try:
         response = requests.get(
@@ -797,6 +881,7 @@ def outlook_folders():
     if not row:
         return {"error": "No active Microsoft token. Connect Outlook first."}, 401
 
+    headers = graph_headers(row[0])
     uri = (
         f"{GRAPH_BASE_URL}/me/mailFolders"
         "?$top=80"
@@ -805,10 +890,7 @@ def outlook_folders():
     try:
         response = requests.get(
             uri,
-            headers={
-                "Authorization": f"Bearer {row[0]}",
-                "Accept": "application/json",
-            },
+            headers=headers,
             timeout=30,
         )
     except requests.RequestException:
@@ -822,6 +904,9 @@ def outlook_folders():
     if response.status_code >= 400:
         error_key, message = friendly_graph_error(payload if isinstance(payload, dict) else {})
         return {"error": message, "error_key": error_key}, response.status_code
+    all_folders = collect_mail_folders(headers)
+    if all_folders:
+        payload["value"] = all_folders
     return payload
 
 
@@ -880,6 +965,92 @@ def outlook_send():
     error_key, message_text = friendly_graph_error(payload if isinstance(payload, dict) else {})
     if error_key in {"invalid_token", "mail_permission"}:
         message_text = "This token cannot send mail. Get a fresh token with Mail.Send permission."
+    return {"error": message_text, "error_key": error_key}, response.status_code
+
+
+@bp.post("/api/outlook/message-action")
+def outlook_message_action():
+    data = request.get_json(silent=True) or {}
+    requested_token_id = str(data.get("token_id") or "").strip()
+    access_token_id = int(requested_token_id) if requested_token_id.isdigit() else active_access_token_id()
+    if not access_token_exists(access_token_id):
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+    row = access_token_row(access_token_id)
+    if not row:
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+
+    message_id = str(data.get("message_id") or "").strip()
+    action = str(data.get("action") or "").strip().lower()
+    if not message_id:
+        return {"error": "No email is selected."}, 400
+
+    encoded_message_id = quote(message_id, safe="")
+    headers = graph_headers(row[0], content_type=True)
+    try:
+        if action == "delete":
+            response = requests.delete(
+                f"{GRAPH_BASE_URL}/me/messages/{encoded_message_id}",
+                headers=headers,
+                timeout=30,
+            )
+        elif action == "archive":
+            response = requests.post(
+                f"{GRAPH_BASE_URL}/me/messages/{encoded_message_id}/move",
+                headers=headers,
+                json={"destinationId": "archive"},
+                timeout=30,
+            )
+        elif action == "mark_read":
+            response = requests.patch(
+                f"{GRAPH_BASE_URL}/me/messages/{encoded_message_id}",
+                headers=headers,
+                json={"isRead": True},
+                timeout=30,
+            )
+        elif action == "mark_unread":
+            response = requests.patch(
+                f"{GRAPH_BASE_URL}/me/messages/{encoded_message_id}",
+                headers=headers,
+                json={"isRead": False},
+                timeout=30,
+            )
+        elif action == "flag":
+            response = requests.patch(
+                f"{GRAPH_BASE_URL}/me/messages/{encoded_message_id}",
+                headers=headers,
+                json={"flag": {"flagStatus": "flagged"}},
+                timeout=30,
+            )
+        elif action == "unflag":
+            response = requests.patch(
+                f"{GRAPH_BASE_URL}/me/messages/{encoded_message_id}",
+                headers=headers,
+                json={"flag": {"flagStatus": "notFlagged"}},
+                timeout=30,
+            )
+        else:
+            return {"error": "Unsupported mailbox action."}, 400
+    except requests.RequestException:
+        return {"error": "DollarHub could not reach Microsoft Graph. Try again."}, 502
+
+    if response.status_code in {200, 201, 202, 204}:
+        payload = {}
+        if response.content:
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {}
+        if isinstance(payload, dict) and payload.get("id"):
+            payload = normalize_message(payload)
+        return {"ok": True, "message": payload}
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"error": response.text or "Microsoft Graph rejected this mailbox action."}
+    error_key, message_text = friendly_graph_error(payload if isinstance(payload, dict) else {})
+    if error_key in {"invalid_token", "mail_permission"}:
+        message_text = "This token cannot change mailbox items. Get a fresh token with Mail.ReadWrite permission."
     return {"error": message_text, "error_key": error_key}, response.status_code
 
 
