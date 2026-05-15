@@ -116,7 +116,21 @@
             if (selectedId) selectMessage(selectedId);
         } catch (error) {
             mailCount.textContent = 'Mailbox could not load';
-            mailList.innerHTML = `<div class="empty-state text-danger">${escapeHtml(error.message)}<br><br>Get a new Graph Explorer token with Mail.Read permission, then connect again.</div>`;
+            mailList.innerHTML = `
+                <div class="empty-state text-danger">
+                    ${escapeHtml(error.message)}<br><br>
+                    Get a fresh Graph Explorer token with Mail.Read permission, then connect again.<br><br>
+                    <a class="btn btn-primary" href="/">Reconnect Outlook</a>
+                    <a class="btn btn-outline-secondary ms-2" target="_blank" rel="noreferrer" href="https://developer.microsoft.com/graph/graph-explorer">Open Graph Explorer</a>
+                </div>
+            `;
+            readingPane.innerHTML = `
+                <div class="empty-state">
+                    <h2 class="h4">Mailbox access needs a fresh token</h2>
+                    <p>In Graph Explorer, use Modify Permissions to consent to Mail.Read, run <code>GET /me/messages</code>, then copy the new access token.</p>
+                    <a class="btn btn-primary" href="/">Reconnect Outlook</a>
+                </div>
+            `;
         }
     }
 

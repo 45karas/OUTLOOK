@@ -13,6 +13,8 @@
                     </p>
                     {% if error == 'missing_token' %}
                     <div class="alert alert-warning">Paste an access token before continuing.</div>
+                    {% elif error == 'no_active_token' %}
+                    <div class="alert alert-warning">No active Microsoft token was found. Paste a fresh Graph Explorer token with <code>Mail.Read</code>, then open the Outlook panel again.</div>
                     {% elif error == 'invalid_token' %}
                     <div class="alert alert-danger">That token could not be used. Paste the full Graph Explorer access token value, not a shortened preview.</div>
                     {% endif %}

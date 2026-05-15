@@ -5,6 +5,7 @@ import os
 
 # Local library imports
 from ..api.company_auth import oauth_configured
+from ..db import connection
 
 # External library imports
 from flask import Blueprint, redirect, render_template, request, send_from_directory, session
@@ -37,10 +38,18 @@ def settings():
     return render_template("settings.html", title="Settings")
 
 
+def has_active_access_token() -> bool:
+    row = connection.query_db(
+        "SELECT value FROM settings WHERE setting = 'active_access_token_id'", one=True
+    )
+    return bool(row and row[0] and str(row[0]) != "0")
+
+
 @bp.route("/mail")
 def mail():
-    if not session.get("company_user"):
-        return redirect("/")
+    if not session.get("company_user") or not has_active_access_token():
+        session.clear()
+        return redirect("/?error=no_active_token")
     return render_template("mail_panel.html", title="Outlook Mail")
 
 
