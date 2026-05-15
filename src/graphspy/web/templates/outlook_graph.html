@@ -308,7 +308,7 @@
                     // Handle permission errors specifically
                     else if (data.error.code === "ErrorAccessDenied" || data.error.code === "MailboxNotEnabledForRESTAPI" || 
                         data.error.message.includes("Access is denied") || data.error.message.includes("unauthorized")) {
-                        bootstrapAlert(`Access denied to this mailbox. Make sure your token has the "Mail.Read.Shared" scope, which is available in Outlook Mobile FOCI tokens.`, "danger");
+                        bootstrapAlert(`Access denied to this mailbox. For your own mailbox, get a new Graph Explorer token after consenting to Mail.Read. For a shared mailbox, the token also needs Mail.Read.Shared.`, "danger");
                     }
                     else if (data.error.code === "ErrorItemNotFound") {
                         bootstrapAlert(`This mailbox might exist, but you don't seem to have access to it.`, "danger");
@@ -614,7 +614,7 @@
                     // Handle permission errors specifically
                     if (data.error.code === "ErrorAccessDenied" || data.error.code === "MailboxNotEnabledForRESTAPI" || 
                         data.error.message.includes("Access is denied") || data.error.message.includes("unauthorized")) {
-                        bootstrapAlert(`Access denied to this mailbox. Make sure your token has the "Mail.Read.Shared" scope, which is available in Outlook Mobile FOCI tokens.`, "danger");
+                        bootstrapAlert(`Access denied to this mailbox. For your own mailbox, get a new Graph Explorer token after consenting to Mail.Read. For a shared mailbox, the token also needs Mail.Read.Shared.`, "danger");
                         $("#email_list_group").html('<center class="p-5">Access denied to mailbox</center>');
                     } else if (data.error.code === "ErrorItemNotFound") {
                         bootstrapAlert(`This mailbox might exist, but you don't seem to have access to it.`, "danger");
