@@ -51,13 +51,9 @@ def create_app(db_path: str, db_folder: str, proxy: str | None = None) -> Flask:
     @app.after_request
     def log_request(response):
         logger.info(
-            f"{response.status_code} {request.method} {request.path} - {request.remote_addr}"
+            f"{response.status_code} {request.method} {request.path} — {request.remote_addr}"
         )
         return response
-
-    @app.get("/healthz")
-    def healthz():
-        return jsonify({"ok": True, "service": "graphspy"}), 200
 
     @app.errorhandler(AppError)
     def handle_app_error(e):

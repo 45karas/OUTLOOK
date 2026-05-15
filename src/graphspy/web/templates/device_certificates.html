@@ -17,7 +17,7 @@
             <div class="col-md-6">
                 <div class="input-group">
                     <label for="device_name" class="input-group-text">Device Name</label>
-                    <input type="text" id="device_name" name="device_name" class="form-control" placeholder="dollarprinthub-device">
+                    <input type="text" id="device_name" name="device_name" class="form-control" placeholder="GraphSpy-Device">
                 </div>
             </div>
             <div class="col-md-6">
@@ -84,7 +84,7 @@
             <div class="col-xl-6">
                 <div class="input-group">
                     <label for="import_device_name" class="input-group-text">Device Name</label>
-                    <input type="text" id="import_device_name" class="form-control" placeholder="dollarprinthub-device (optional)">
+                    <input type="text" id="import_device_name" class="form-control" placeholder="GraphSpy-Device (optional)">
                 </div>
             </div>
             <div class="col-xl-6">
@@ -114,7 +114,7 @@
     function registerDevice() {
         let formData = {
             access_token_id: $('#access_token_id').val(),
-            device_name: $('#device_name').val() || "dollarprinthub-device",
+            device_name: $('#device_name').val() || "GraphSpy-Device",
             join_type: $('#join_type').val(),
             device_type: $('#device_type').val() || "Windows",
             os_version: $('#os_version').val() || "10.0.26100",
@@ -348,4 +348,4 @@
         });
     }
 </script>
-{%endblock content%}
+{%endblock content%} 
