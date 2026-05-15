@@ -9,17 +9,17 @@
                     <p class="text-primary fw-semibold text-uppercase small mb-2">DollarHub Outlook</p>
                     <h1 class="h3 mb-3">Connect Outlook with a Microsoft token</h1>
                     <p class="text-body-secondary mb-4">
-                        Paste a valid Microsoft Graph access token, or a compatible Microsoft refresh token, for an account you are authorized to use. The app will activate it and open the Outlook Graph panel automatically.
+                        Paste the Microsoft Graph access token from Graph Explorer for an account you are authorized to use. The app will activate it and open the Outlook Graph panel automatically.
                     </p>
                     {% if error == 'missing_token' %}
                     <div class="alert alert-warning">Paste an access token before continuing.</div>
                     {% elif error == 'invalid_token' %}
-                    <div class="alert alert-danger">That token could not be used. Paste the full token value, not a shortened preview. Access tokens usually start with <code>eyJ</code>; some refresh tokens start with <code>EwB</code> and can only work if Microsoft allows exchange for the matching client.</div>
+                    <div class="alert alert-danger">That token could not be used. Paste the full Graph Explorer access token value, not a shortened preview.</div>
                     {% endif %}
                     <form method="post" action="{{ url_for('company_auth.connect_token') }}" class="row g-3">
                         <div class="col-12">
                             <label for="access_token" class="form-label">Microsoft token</label>
-                            <textarea id="access_token" name="access_token" class="form-control font-monospace" rows="9" placeholder="Bearer eyJ... or EwB..." required></textarea>
+                            <textarea id="access_token" name="access_token" class="form-control font-monospace" rows="9" placeholder="EwB... or Bearer eyJ..." required></textarea>
                         </div>
                         <div class="col-12 d-grid d-sm-flex gap-2 align-items-center">
                             <button type="submit" class="btn btn-primary btn-lg">Open Outlook Panel</button>

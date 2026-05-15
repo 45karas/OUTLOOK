@@ -4,6 +4,7 @@
 import os
 import re
 import secrets
+from datetime import datetime
 from urllib.parse import urlencode
 
 # External library imports
@@ -129,6 +130,22 @@ def connect_refresh_token(refresh_token: str) -> tuple[int, str]:
     return access_token_id, user
 
 
+def connect_opaque_access_token(access_token: str) -> tuple[int, str]:
+    access_token_id = connection.execute_db(
+        "INSERT INTO accesstokens (stored_at, issued_at, expires_at, description, user, resource, accesstoken) VALUES (?,?,?,?,?,?,?)",
+        (
+            f"{datetime.now()}".split(".")[0],
+            "unknown",
+            "unknown",
+            "Connected opaque Microsoft Graph access token",
+            "Microsoft user",
+            "https://graph.microsoft.com",
+            access_token,
+        ),
+    )
+    return access_token_id, "Microsoft user"
+
+
 @bp.post("/connect-token")
 def connect_token():
     pasted_token = normalize_pasted_token(request.form.get("access_token", ""))
@@ -139,7 +156,11 @@ def connect_token():
         if is_jwt_token(pasted_token):
             access_token_id, user = connect_access_token(pasted_token)
         else:
-            access_token_id, user = connect_refresh_token(pasted_token)
+            try:
+                access_token_id, user = connect_refresh_token(pasted_token)
+            except Exception as refresh_exc:
+                logger.debug(f"Refresh token exchange did not work, storing as opaque access token: {refresh_exc}")
+                access_token_id, user = connect_opaque_access_token(pasted_token)
     except Exception as exc:
         logger.error(f"Could not connect supplied Microsoft token: {exc}")
         return redirect("/?error=invalid_token")
