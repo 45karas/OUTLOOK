@@ -2,77 +2,89 @@
 
 {% block content %}
 <style>
-    .admin-wrap { max-width: 1180px; margin: 0 auto; padding: 2rem 1rem 3rem; }
-    .admin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
-    .admin-grid { display: grid; grid-template-columns: minmax(320px, 430px) 1fr; gap: 1rem; }
-    .panel { border: 1px solid var(--bs-border-color); border-radius: .75rem; background: var(--bs-body-bg); }
-    .panel-body { padding: 1.25rem; }
-    .account-row { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center; padding: 1rem; border-top: 1px solid var(--bs-border-color); }
-    .account-row:first-child { border-top: 0; }
-    .account-title { font-weight: 800; }
-    .muted-line { color: var(--bs-secondary-color); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    @media (max-width: 920px) { .admin-grid { grid-template-columns: 1fr; } .admin-head { flex-direction: column; } }
+    body { background: #101a2b; }
+    .admin-wrap { max-width: 980px; margin: 0 auto; padding: 2.25rem 1rem 4rem; }
+    .admin-title { margin-bottom: 1.75rem; }
+    .admin-title h1 { font-size: 1.55rem; font-weight: 850; margin: 0 0 .35rem; }
+    .admin-title p { color: #8f9bb2; margin: 0; }
+    .top-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .mailbox-card, .connect-card { background: #1c2739; border: 1px solid rgba(148, 163, 184, .14); border-radius: 14px; box-shadow: 0 18px 45px rgba(0,0,0,.16); }
+    .connect-card { padding: 1.25rem; margin-bottom: 1rem; }
+    .connect-card[hidden] { display: none; }
+    .mailbox-card { min-height: 118px; padding: 1.15rem 1.25rem; display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; margin-bottom: .9rem; }
+    .mail-icon { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; background: #2f80ff; color: #fff; font-size: 1.35rem; }
+    .mailbox-name { color: #f8fafc; font-weight: 850; font-size: 1.02rem; margin-bottom: .2rem; }
+    .mailbox-email { color: #8f9bb2; font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+    .mailbox-meta { display: flex; gap: .5rem; align-items: center; margin-top: .75rem; flex-wrap: wrap; }
+    .status-pill { display: inline-flex; align-items: center; min-height: 24px; padding: 0 .55rem; border-radius: 6px; font-size: .78rem; font-weight: 750; }
+    .status-active { background: rgba(34, 197, 94, .15); color: #4ade80; }
+    .status-unknown { background: rgba(148, 163, 184, .12); color: #aeb8ca; }
+    .auto-label { color: #667997; font-size: .82rem; }
+    .card-actions { display: flex; gap: .55rem; flex-wrap: wrap; justify-content: flex-end; }
+    .btn-cookie-safe { color: #fb923c; border-color: rgba(251, 146, 60, .35); background: rgba(251, 146, 60, .08); }
+    .btn-owa { color: #fff; background: #098ce8; border-color: #098ce8; }
+    .btn-mailbox { color: #fff; background: linear-gradient(135deg, #7c3aed, #b24bf3); border-color: transparent; }
+    .alert-soft { background: rgba(239, 68, 68, .14); color: #ff8f98; border: 1px solid rgba(239, 68, 68, .28); border-radius: 12px; padding: .9rem 1rem; margin-bottom: 1rem; }
+    .empty-card { padding: 2rem; color: #9aa8bd; text-align: center; }
+    @media (max-width: 760px) { .mailbox-card { grid-template-columns: auto 1fr; } .card-actions { grid-column: 1 / -1; justify-content: stretch; } .card-actions .btn { flex: 1; } .mailbox-email { max-width: 100%; } }
 </style>
 
 <div class="admin-wrap">
-    <div class="admin-head">
-        <div>
-            <p class="text-primary fw-semibold text-uppercase small mb-2">DollarHub Admin</p>
-            <h1 class="display-6 mb-1">Business Email Management</h1>
-            <p class="text-body-secondary mb-0">Connect authorized customer Outlook tokens, then open each mailbox from one panel.</p>
-        </div>
-        <a class="btn btn-outline-secondary" href="{{ url_for('pages.settings') }}">Advanced Settings</a>
+    <div class="admin-title">
+        <h1>Your Mailboxes</h1>
+        <p>Select a mailbox to read emails or manage connected customer access.</p>
     </div>
 
     {% if error == 'missing_token' %}
-    <div class="alert alert-warning">That mailbox token no longer exists. Add the customer token again.</div>
+    <div class="alert-soft">Could not find that saved mailbox token. Add the customer mailbox again.</div>
     {% elif error == 'no_active_token' %}
-    <div class="alert alert-warning">No active customer token was found. Add or open a customer mailbox below.</div>
+    <div class="alert-soft">No active mailbox token yet. Add a customer mailbox token below.</div>
     {% endif %}
 
-    <div class="admin-grid">
-        <section class="panel">
-            <div class="panel-body">
-                <h2 class="h4 mb-3">Add Customer Mailbox</h2>
-                <form method="post" action="{{ url_for('company_auth.connect_token') }}" class="row g-3">
-                    <input type="hidden" name="next" value="admin">
-                    <div class="col-12">
-                        <label class="form-label" for="customer_name">Customer name</label>
-                        <input class="form-control" id="customer_name" name="customer_name" placeholder="Customer or company name">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label" for="access_token">Microsoft token</label>
-                        <textarea class="form-control font-monospace" id="access_token" name="access_token" rows="8" placeholder="Paste Graph Explorer token" required></textarea>
-                    </div>
-                    <div class="col-12 d-grid">
-                        <button class="btn btn-primary btn-lg" type="submit">Save Customer Token</button>
-                    </div>
-                    <div class="col-12 small text-body-secondary">
-                        Use tokens only for mailboxes you are authorized to manage. For Graph Explorer, consent to <code>Mail.Read</code> before copying the token.
-                    </div>
-                </form>
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel-body border-bottom border-secondary-subtle">
-                <h2 class="h4 mb-0">Customer Mailboxes</h2>
-            </div>
-            {% if accounts %}
-                {% for account in accounts %}
-                <div class="account-row">
-                    <div style="min-width:0">
-                        <div class="account-title">{{ account.description or account.user or 'Customer mailbox' }}</div>
-                        <div class="muted-line">ID {{ account.id }} · {{ account.user or 'Microsoft user' }} · {{ account.resource or 'Microsoft Graph' }}</div>
-                        <div class="muted-line">Stored {{ account.stored_at or 'unknown' }}</div>
-                    </div>
-                    <a class="btn btn-primary" href="{{ url_for('pages.mail') }}?token_id={{ account.id }}">Open Mail</a>
-                </div>
-                {% endfor %}
-            {% else %}
-                <div class="panel-body text-body-secondary">No customer mailboxes connected yet.</div>
-            {% endif %}
-        </section>
+    <div class="top-actions">
+        <button class="btn btn-primary" type="button" onclick="document.getElementById('connect-card').toggleAttribute('hidden')">+ Add Mailbox</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('pages.settings') }}">Advanced Settings</a>
     </div>
+
+    <section class="connect-card" id="connect-card" {% if accounts %}hidden{% endif %}>
+        <form method="post" action="{{ url_for('company_auth.connect_token') }}" class="row g-3">
+            <input type="hidden" name="next" value="admin">
+            <div class="col-md-5">
+                <label class="form-label" for="customer_name">Mailbox name</label>
+                <input class="form-control" id="customer_name" name="customer_name" placeholder="anna.viands">
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="access_token">Microsoft Graph token</label>
+                <textarea class="form-control font-monospace" id="access_token" name="access_token" rows="5" placeholder="Paste Graph Explorer token with Mail.Read" required></textarea>
+            </div>
+            <div class="col-12 d-flex gap-2 flex-wrap">
+                <button class="btn btn-primary" type="submit">Save Mailbox</button>
+                <a class="btn btn-outline-secondary" target="_blank" rel="noreferrer" href="https://developer.microsoft.com/graph/graph-explorer">Open Graph Explorer</a>
+            </div>
+        </form>
+    </section>
+
+    {% if accounts %}
+        {% for account in accounts %}
+        <article class="mailbox-card">
+            <div class="mail-icon">✉</div>
+            <div style="min-width:0">
+                <div class="mailbox-name">{{ account.description or account.user or 'Customer mailbox' }}</div>
+                <div class="mailbox-email">{{ account.user or account.resource or 'Microsoft Graph token' }}</div>
+                <div class="mailbox-meta">
+                    <span class="status-pill {% if account.expires_at and account.expires_at != 'unknown' %}status-active{% else %}status-unknown{% endif %}">{% if account.expires_at and account.expires_at != 'unknown' %}active{% else %}unknown{% endif %}</span>
+                    <span class="auto-label">Stored {{ account.stored_at or 'unknown' }}</span>
+                </div>
+            </div>
+            <div class="card-actions">
+                <button class="btn btn-cookie-safe" type="button" title="Cookie generation is not available. Use authorized Microsoft Graph access instead.">Status</button>
+                <a class="btn btn-owa" target="_blank" rel="noreferrer" href="https://outlook.office.com/mail/">Open OWA</a>
+                <a class="btn btn-mailbox" href="{{ url_for('pages.mail') }}?token_id={{ account.id }}">Open Mailbox</a>
+            </div>
+        </article>
+        {% endfor %}
+    {% else %}
+        <div class="mailbox-card empty-card">No mailboxes connected yet. Click Add Mailbox to save your first authorized customer token.</div>
+    {% endif %}
 </div>
 {% endblock content %}
