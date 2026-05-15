@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 # External library imports
 import jwt
 import requests
-from flask import Blueprint, redirect, request, session, url_for
+from flask import Blueprint, jsonify, redirect, request, session, url_for
 from loguru import logger
 
 # Local library imports
@@ -97,8 +97,9 @@ def token_user(access_token: str) -> str:
 
 def connect_access_token(access_token: str) -> tuple[int, str]:
     user = token_user(access_token)
+    description = request.form.get("customer_name", "").strip() or f"Connected Outlook access token for {user}"
     access_token_id = tokens.save_access_token(
-        access_token, f"Connected Outlook access token for {user}"
+        access_token, description
     )
     return access_token_id, user
 
@@ -132,13 +133,14 @@ def connect_refresh_token(refresh_token: str) -> tuple[int, str]:
 
 
 def connect_opaque_access_token(access_token: str) -> tuple[int, str]:
+    description = request.form.get("customer_name", "").strip() or "Connected opaque Microsoft Graph access token"
     access_token_id = connection.execute_db(
         "INSERT INTO accesstokens (stored_at, issued_at, expires_at, description, user, resource, accesstoken) VALUES (?,?,?,?,?,?,?)",
         (
             f"{datetime.now()}".split(".")[0],
             "unknown",
             "unknown",
-            "Connected opaque Microsoft Graph access token",
+            description,
             "Microsoft user",
             "https://graph.microsoft.com",
             access_token,
@@ -157,6 +159,21 @@ def active_access_token_id() -> int | None:
         return int(row[0])
     except (TypeError, ValueError):
         return None
+
+
+def access_token_exists(access_token_id: int | None) -> bool:
+    if not access_token_id:
+        return False
+    row = connection.query_db(
+        "SELECT id FROM accesstokens WHERE id = ?", [access_token_id], one=True
+    )
+    return bool(row)
+
+
+def access_token_accounts() -> list[dict]:
+    return connection.query_db_json(
+        "SELECT id, stored_at, issued_at, expires_at, description, user, resource FROM accesstokens ORDER BY id DESC"
+    )
 
 
 @bp.post("/connect-token")
@@ -181,14 +198,23 @@ def connect_token():
     set_active_access_token(access_token_id)
     session["company_user"] = user
     session["company_access_token_id"] = access_token_id
+    if request.form.get("next") == "admin":
+        return redirect("/admin")
     return redirect("/mail")
+
+
+@bp.get("/api/dollarhub/accounts")
+def dollarhub_accounts():
+    return jsonify(access_token_accounts())
 
 
 @bp.get("/api/outlook/messages")
 def outlook_messages():
-    access_token_id = active_access_token_id()
-    if not access_token_id:
+    requested_token_id = request.args.get("token_id", "").strip()
+    access_token_id = int(requested_token_id) if requested_token_id.isdigit() else active_access_token_id()
+    if not access_token_exists(access_token_id):
         return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+    set_active_access_token(access_token_id)
 
     top = request.args.get("top", "50")
     uri = (

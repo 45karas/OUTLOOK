@@ -4,7 +4,7 @@
 <style>
     .mail-shell { height: calc(100vh - 98px); display: grid; grid-template-columns: minmax(320px, 430px) 1fr; border-top: 1px solid var(--bs-border-color); }
     .mail-list { border-right: 1px solid var(--bs-border-color); overflow: auto; }
-    .mail-header { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--bs-border-color); }
+    .mail-header { min-height: 88px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--bs-border-color); }
     .mail-row { width: 100%; border: 0; border-bottom: 1px solid var(--bs-border-color); background: transparent; color: var(--bs-body-color); padding: 1rem 1.25rem; text-align: left; display: grid; gap: .35rem; }
     .mail-row:hover, .mail-row.active { background: var(--bs-secondary-bg); }
     .mail-row.unread .mail-subject, .mail-row.unread .mail-from { font-weight: 800; }
@@ -22,10 +22,15 @@
     <section class="mail-list">
         <div class="mail-header">
             <div>
+                <p class="text-primary fw-semibold text-uppercase small mb-1">DollarHub Mail</p>
                 <h1 class="h3 mb-0">Outlook Inbox</h1>
                 <div class="text-body-secondary small" id="mail-count">Loading emails...</div>
             </div>
-            <button class="btn btn-outline-primary" id="refresh-mail">Refresh</button>
+            <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
+                <select class="form-select" id="account-select" style="min-width: 220px"></select>
+                <a class="btn btn-outline-secondary" href="{{ url_for('pages.admin') }}">Admin</a>
+                <button class="btn btn-outline-primary" id="refresh-mail">Refresh</button>
+            </div>
         </div>
         <div id="mail-list-content">
             <div class="empty-state">Loading your mailbox...</div>
@@ -46,6 +51,9 @@
     const mailList = document.getElementById('mail-list-content');
     const mailCount = document.getElementById('mail-count');
     const readingPane = document.getElementById('reading-pane-content');
+    const accountSelect = document.getElementById('account-select');
+    const urlParams = new URLSearchParams(window.location.search);
+    let activeTokenId = urlParams.get('token_id') || '{{ token_id or "" }}';
     let messages = [];
     let selectedId = null;
 
@@ -101,11 +109,30 @@
         `;
     }
 
+    async function loadAccounts() {
+        const response = await fetch('/api/dollarhub/accounts');
+        const accounts = await response.json();
+        accountSelect.innerHTML = '';
+        if (!accounts.length) {
+            accountSelect.innerHTML = '<option value="">No customer mailboxes</option>';
+            return;
+        }
+        if (!activeTokenId) activeTokenId = String(accounts[0].id);
+        for (const account of accounts) {
+            const option = document.createElement('option');
+            option.value = account.id;
+            option.textContent = account.description || account.user || `Mailbox ${account.id}`;
+            option.selected = String(account.id) === String(activeTokenId);
+            accountSelect.appendChild(option);
+        }
+    }
+
     async function loadMail() {
         mailCount.textContent = 'Loading emails...';
         mailList.innerHTML = '<div class="empty-state">Loading your mailbox...</div>';
         try {
-            const response = await fetch('/api/outlook/messages?top=50');
+            const tokenQuery = activeTokenId ? `&token_id=${encodeURIComponent(activeTokenId)}` : '';
+            const response = await fetch(`/api/outlook/messages?top=50${tokenQuery}`);
             const data = await response.json();
             if (!response.ok || data.error) {
                 throw new Error(data.error?.message || data.error || 'Unable to load mailbox');
@@ -120,7 +147,7 @@
                 <div class="empty-state text-danger">
                     ${escapeHtml(error.message)}<br><br>
                     Get a fresh Graph Explorer token with Mail.Read permission, then connect again.<br><br>
-                    <a class="btn btn-primary" href="/">Reconnect Outlook</a>
+                    <a class="btn btn-primary" href="{{ url_for('pages.admin') }}">Manage Customer Tokens</a>
                     <a class="btn btn-outline-secondary ms-2" target="_blank" rel="noreferrer" href="https://developer.microsoft.com/graph/graph-explorer">Open Graph Explorer</a>
                 </div>
             `;
@@ -128,13 +155,19 @@
                 <div class="empty-state">
                     <h2 class="h4">Mailbox access needs a fresh token</h2>
                     <p>In Graph Explorer, use Modify Permissions to consent to Mail.Read, run <code>GET /me/messages</code>, then copy the new access token.</p>
-                    <a class="btn btn-primary" href="/">Reconnect Outlook</a>
+                    <a class="btn btn-primary" href="{{ url_for('pages.admin') }}">Manage Customer Tokens</a>
                 </div>
             `;
         }
     }
 
+    accountSelect.addEventListener('change', () => {
+        activeTokenId = accountSelect.value;
+        const target = activeTokenId ? `/mail?token_id=${encodeURIComponent(activeTokenId)}` : '/mail';
+        history.replaceState(null, '', target);
+        loadMail();
+    });
     document.getElementById('refresh-mail').addEventListener('click', loadMail);
-    loadMail();
+    loadAccounts().then(loadMail);
 </script>
 {% endblock content %}

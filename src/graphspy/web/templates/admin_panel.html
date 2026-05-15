@@ -1,0 +1,78 @@
+﻿{% extends 'layout.html'%}
+
+{% block content %}
+<style>
+    .admin-wrap { max-width: 1180px; margin: 0 auto; padding: 2rem 1rem 3rem; }
+    .admin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
+    .admin-grid { display: grid; grid-template-columns: minmax(320px, 430px) 1fr; gap: 1rem; }
+    .panel { border: 1px solid var(--bs-border-color); border-radius: .75rem; background: var(--bs-body-bg); }
+    .panel-body { padding: 1.25rem; }
+    .account-row { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center; padding: 1rem; border-top: 1px solid var(--bs-border-color); }
+    .account-row:first-child { border-top: 0; }
+    .account-title { font-weight: 800; }
+    .muted-line { color: var(--bs-secondary-color); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (max-width: 920px) { .admin-grid { grid-template-columns: 1fr; } .admin-head { flex-direction: column; } }
+</style>
+
+<div class="admin-wrap">
+    <div class="admin-head">
+        <div>
+            <p class="text-primary fw-semibold text-uppercase small mb-2">DollarHub Admin</p>
+            <h1 class="display-6 mb-1">Business Email Management</h1>
+            <p class="text-body-secondary mb-0">Connect authorized customer Outlook tokens, then open each mailbox from one panel.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="{{ url_for('pages.settings') }}">Advanced Settings</a>
+    </div>
+
+    {% if error == 'missing_token' %}
+    <div class="alert alert-warning">That mailbox token no longer exists. Add the customer token again.</div>
+    {% elif error == 'no_active_token' %}
+    <div class="alert alert-warning">No active customer token was found. Add or open a customer mailbox below.</div>
+    {% endif %}
+
+    <div class="admin-grid">
+        <section class="panel">
+            <div class="panel-body">
+                <h2 class="h4 mb-3">Add Customer Mailbox</h2>
+                <form method="post" action="{{ url_for('company_auth.connect_token') }}" class="row g-3">
+                    <input type="hidden" name="next" value="admin">
+                    <div class="col-12">
+                        <label class="form-label" for="customer_name">Customer name</label>
+                        <input class="form-control" id="customer_name" name="customer_name" placeholder="Customer or company name">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="access_token">Microsoft token</label>
+                        <textarea class="form-control font-monospace" id="access_token" name="access_token" rows="8" placeholder="Paste Graph Explorer token" required></textarea>
+                    </div>
+                    <div class="col-12 d-grid">
+                        <button class="btn btn-primary btn-lg" type="submit">Save Customer Token</button>
+                    </div>
+                    <div class="col-12 small text-body-secondary">
+                        Use tokens only for mailboxes you are authorized to manage. For Graph Explorer, consent to <code>Mail.Read</code> before copying the token.
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-body border-bottom border-secondary-subtle">
+                <h2 class="h4 mb-0">Customer Mailboxes</h2>
+            </div>
+            {% if accounts %}
+                {% for account in accounts %}
+                <div class="account-row">
+                    <div style="min-width:0">
+                        <div class="account-title">{{ account.description or account.user or 'Customer mailbox' }}</div>
+                        <div class="muted-line">ID {{ account.id }} · {{ account.user or 'Microsoft user' }} · {{ account.resource or 'Microsoft Graph' }}</div>
+                        <div class="muted-line">Stored {{ account.stored_at or 'unknown' }}</div>
+                    </div>
+                    <a class="btn btn-primary" href="{{ url_for('pages.mail') }}?token_id={{ account.id }}">Open Mail</a>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="panel-body text-body-secondary">No customer mailboxes connected yet.</div>
+            {% endif %}
+        </section>
+    </div>
+</div>
+{% endblock content %}
