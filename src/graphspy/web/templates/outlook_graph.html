@@ -157,7 +157,6 @@
 
 <script>
     $(document).ready(function() {
-        window.companyAutoloadOutlook = new URLSearchParams(window.location.search).get('autoload') === '1';
         // Dynamically set the max-height of the containers to whatever space is left
         $("#email_list_group").css("max-height", `calc(100vh - ${document.getElementById("email_list_group").getBoundingClientRect().top}px - 10px)`);
         $("#email_content_container").css("max-height", `calc(100vh - ${document.getElementById("email_content_container").getBoundingClientRect().top}px - 10px)`);
@@ -308,7 +307,7 @@
                     // Handle permission errors specifically
                     else if (data.error.code === "ErrorAccessDenied" || data.error.code === "MailboxNotEnabledForRESTAPI" || 
                         data.error.message.includes("Access is denied") || data.error.message.includes("unauthorized")) {
-                        bootstrapAlert(`Access denied to this mailbox. For your own mailbox, get a new Graph Explorer token after consenting to Mail.Read. For a shared mailbox, the token also needs Mail.Read.Shared.`, "danger");
+                        bootstrapAlert(`Access denied to this mailbox. Make sure your token has the "Mail.Read.Shared" scope, which is available in Outlook Mobile FOCI tokens.`, "danger");
                     }
                     else if (data.error.code === "ErrorItemNotFound") {
                         bootstrapAlert(`This mailbox might exist, but you don't seem to have access to it.`, "danger");
@@ -614,7 +613,7 @@
                     // Handle permission errors specifically
                     if (data.error.code === "ErrorAccessDenied" || data.error.code === "MailboxNotEnabledForRESTAPI" || 
                         data.error.message.includes("Access is denied") || data.error.message.includes("unauthorized")) {
-                        bootstrapAlert(`Access denied to this mailbox. For your own mailbox, get a new Graph Explorer token after consenting to Mail.Read. For a shared mailbox, the token also needs Mail.Read.Shared.`, "danger");
+                        bootstrapAlert(`Access denied to this mailbox. Make sure your token has the "Mail.Read.Shared" scope, which is available in Outlook Mobile FOCI tokens.`, "danger");
                         $("#email_list_group").html('<center class="p-5">Access denied to mailbox</center>');
                     } else if (data.error.code === "ErrorItemNotFound") {
                         bootstrapAlert(`This mailbox might exist, but you don't seem to have access to it.`, "danger");
@@ -672,10 +671,6 @@
                 });
                 
                 bootstrapToast("Folders", `Loaded ${data.value.length} mail folders`, "success");
-                if (window.companyAutoloadOutlook) {
-                    window.companyAutoloadOutlook = false;
-                    fetchEmails();
-                }
             },
             error: function(xhr, status, error) {
                 bootstrapAlert(`Failed to load folders: ${error}`, "danger");
@@ -1432,4 +1427,4 @@
     }
 </script>
 
-{%endblock content%} 
+{%endblock content%}

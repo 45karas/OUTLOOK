@@ -9,12 +9,7 @@ import jwt
 
 # Local library imports
 from ..db import connection
-from .company_auth import (
-    ManualTokenError,
-    normalize_pasted_token,
-    save_validated_access_token,
-    set_active_access_token,
-)
+from ..core import tokens
 
 bp = Blueprint("access_tokens", __name__)
 
@@ -27,18 +22,11 @@ def list_access_tokens():
 
 @bp.post("/api/add_access_token")
 def add_access_token():
-    accesstoken = normalize_pasted_token(request.form.get("accesstoken", ""))
+    accesstoken = request.form.get("accesstoken", "")
     description = request.form.get("description", "")
-    if not accesstoken:
-        return redirect("/admin?error=missing_token")
-    try:
-        access_token_id, _ = save_validated_access_token(accesstoken, description)
-    except ManualTokenError as exc:
-        return redirect(f"/admin?error={exc.error_key}")
-    except Exception:
-        return redirect("/admin?error=invalid_token")
-    set_active_access_token(access_token_id)
-    return redirect(f"/mail?token_id={access_token_id}")
+    if accesstoken:
+        tokens.save_access_token(accesstoken, description)
+    return redirect("/access_tokens")
 
 
 @bp.get("/api/get_access_token/<id>")
@@ -56,14 +44,7 @@ def decode_token(id):
     )
     if not row:
         return f"[Error] Could not find access token with id {id}", 400
-    try:
-        decoded = jwt.decode(row[0], options={"verify_signature": False})
-    except jwt.exceptions.DecodeError:
-        return {
-            "token_type": "opaque",
-            "resource": "https://graph.microsoft.com",
-            "message": "This token cannot be decoded locally, but it can still be used with Microsoft Graph.",
-        }
+    decoded = jwt.decode(row[0], options={"verify_signature": False})
     return decoded
 
 

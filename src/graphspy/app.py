@@ -2,8 +2,6 @@
 
 # Built-in imports
 import logging
-import os
-import secrets
 
 # External library imports
 from flask import Flask, jsonify, request
@@ -16,7 +14,6 @@ from .db import connection
 
 def create_app(db_path: str, db_folder: str, proxy: str | None = None) -> Flask:
     app = Flask(__name__, template_folder="web/templates", static_folder="web/static")
-    app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
     app.config["graph_spy_db_path"] = db_path
     app.config["graph_spy_db_folder"] = db_folder
     app.config["table_error_messages"] = "disabled"
@@ -24,7 +21,6 @@ def create_app(db_path: str, db_folder: str, proxy: str | None = None) -> Flask:
 
     from .api import (
         access_tokens,
-        company_auth,
         database,
         device_codes,
         devices,
@@ -39,7 +35,6 @@ def create_app(db_path: str, db_folder: str, proxy: str | None = None) -> Flask:
 
     for module in [
         access_tokens,
-        company_auth,
         database,
         device_codes,
         devices,
@@ -60,6 +55,10 @@ def create_app(db_path: str, db_folder: str, proxy: str | None = None) -> Flask:
         )
         return response
 
+    @app.get("/healthz")
+    def healthz():
+        return jsonify({"ok": True, "service": "graphspy"}), 200
+
     @app.errorhandler(AppError)
     def handle_app_error(e):
         logger.error(f"AppError in {e.func_name}():{e.line_number} - {e.message}")
@@ -72,5 +71,3 @@ def create_app(db_path: str, db_folder: str, proxy: str | None = None) -> Flask:
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
     return app
-
-

@@ -1,21 +1,12 @@
 services:
   - type: web
-    name: outlook-graphspy
+    name: outlook
     runtime: python
     plan: free
     buildCommand: pip install .
-    startCommand: graphspy -i 0.0.0.0 -p $PORT
+    startCommand: graphspy -i 0.0.0.0 -p $PORT -d database
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: MS_TENANT_ID
-        sync: false
-      - key: MS_CLIENT_ID
-        sync: false
-      - key: MS_CLIENT_SECRET
-        sync: false
-      - key: MS_REDIRECT_URI
-        sync: false
-      - key: FLASK_SECRET_KEY
-        generateValue: true
-
+      - key: XDG_DATA_HOME
+        value: /opt/render/.local/share
