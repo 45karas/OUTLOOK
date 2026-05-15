@@ -2,6 +2,7 @@
 
 # Built-in imports
 import os
+import re
 import secrets
 from urllib.parse import urlencode
 
@@ -18,6 +19,8 @@ from ..db import connection
 bp = Blueprint("company_auth", __name__)
 
 DEFAULT_SCOPES = "openid profile User.Read Mail.Read Mail.ReadWrite Mail.Send"
+GRAPH_SCOPES = "https://graph.microsoft.com/User.Read https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send"
+DEFAULT_PUBLIC_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
 
 
 def oauth_configured() -> bool:
@@ -59,6 +62,26 @@ def set_active_access_token(access_token_id: int) -> None:
         )
 
 
+def normalize_pasted_token(raw_token: str) -> str:
+    token = raw_token.strip().strip('"').strip("'")
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+
+    jwt_match = re.search(
+        r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", token
+    )
+    if jwt_match:
+        return jwt_match.group(0)
+
+    return re.sub(r"\s+", "", token)
+
+
+def is_jwt_token(token: str) -> bool:
+    return bool(
+        re.fullmatch(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", token)
+    )
+
+
 def token_user(access_token: str) -> str:
     decoded = jwt.decode(access_token, options={"verify_signature": False})
     return (
@@ -70,17 +93,55 @@ def token_user(access_token: str) -> str:
     )
 
 
+def connect_access_token(access_token: str) -> tuple[int, str]:
+    user = token_user(access_token)
+    access_token_id = tokens.save_access_token(
+        access_token, f"Connected Outlook access token for {user}"
+    )
+    return access_token_id, user
+
+
+def connect_refresh_token(refresh_token: str) -> tuple[int, str]:
+    refresh_token_id = tokens.save_refresh_token(
+        refresh_token,
+        "Connected Outlook refresh token",
+        "Microsoft user",
+        tenant_id(),
+        "https://graph.microsoft.com",
+        0,
+        os.environ.get("MS_PUBLIC_CLIENT_ID", DEFAULT_PUBLIC_CLIENT_ID),
+    )
+    access_token_id = tokens.refresh_to_access_token(
+        refresh_token_id,
+        client_id=os.environ.get("MS_PUBLIC_CLIENT_ID", DEFAULT_PUBLIC_CLIENT_ID),
+        resource="https://graph.microsoft.com",
+        scope=GRAPH_SCOPES,
+        store_refresh_token=False,
+        api_version=2,
+    )
+    if not isinstance(access_token_id, int):
+        raise ValueError(f"Refresh token exchange failed: {access_token_id}")
+
+    row = connection.query_db(
+        "SELECT user FROM accesstokens WHERE id = ?", [access_token_id], one=True
+    )
+    user = row[0] if row else "Microsoft user"
+    return access_token_id, user
+
+
 @bp.post("/connect-token")
 def connect_token():
-    access_token = request.form.get("access_token", "").strip()
-    if not access_token:
+    pasted_token = normalize_pasted_token(request.form.get("access_token", ""))
+    if not pasted_token:
         return redirect("/?error=missing_token")
 
     try:
-        user = token_user(access_token)
-        access_token_id = tokens.save_access_token(access_token, f"Connected Outlook token for {user}")
+        if is_jwt_token(pasted_token):
+            access_token_id, user = connect_access_token(pasted_token)
+        else:
+            access_token_id, user = connect_refresh_token(pasted_token)
     except Exception as exc:
-        logger.error(f"Could not save supplied access token: {exc}")
+        logger.error(f"Could not connect supplied Microsoft token: {exc}")
         return redirect("/?error=invalid_token")
 
     set_active_access_token(access_token_id)
