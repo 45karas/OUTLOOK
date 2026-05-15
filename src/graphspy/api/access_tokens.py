@@ -9,7 +9,12 @@ import jwt
 
 # Local library imports
 from ..db import connection
-from ..core import tokens
+from .company_auth import (
+    ManualTokenError,
+    normalize_pasted_token,
+    save_validated_access_token,
+    set_active_access_token,
+)
 
 bp = Blueprint("access_tokens", __name__)
 
@@ -22,11 +27,18 @@ def list_access_tokens():
 
 @bp.post("/api/add_access_token")
 def add_access_token():
-    accesstoken = request.form.get("accesstoken", "")
+    accesstoken = normalize_pasted_token(request.form.get("accesstoken", ""))
     description = request.form.get("description", "")
-    if accesstoken:
-        tokens.save_access_token(accesstoken, description)
-    return redirect("/access_tokens")
+    if not accesstoken:
+        return redirect("/admin?error=missing_token")
+    try:
+        access_token_id, _ = save_validated_access_token(accesstoken, description)
+    except ManualTokenError as exc:
+        return redirect(f"/admin?error={exc.error_key}")
+    except Exception:
+        return redirect("/admin?error=invalid_token")
+    set_active_access_token(access_token_id)
+    return redirect(f"/mail?token_id={access_token_id}")
 
 
 @bp.get("/api/get_access_token/<id>")

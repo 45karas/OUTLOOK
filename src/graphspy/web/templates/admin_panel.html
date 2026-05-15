@@ -46,10 +46,20 @@
     <div class="alert-soft">No active mailbox token yet. Add a customer mailbox token below.</div>
     {% elif error == 'oauth_not_configured' %}
     <div class="alert-soft">Microsoft automatic login is not configured yet. Add MS_CLIENT_ID, MS_CLIENT_SECRET, MS_TENANT_ID, MS_REDIRECT_URI, and FLASK_SECRET_KEY in Render, then redeploy.</div>
+    {% elif error == 'expired_token' %}
+    <div class="alert-soft">That token is expired or invalid. Copy a fresh Microsoft Graph access token and save it again.</div>
+    {% elif error == 'mail_permission' %}
+    <div class="alert-soft">Access is denied. The token does not have mailbox permission. In Graph Explorer, consent to <strong>Mail.Read</strong>, run <strong>GET /me/messages</strong>, then copy the new Access token.</div>
+    {% elif error == 'invalid_token' %}
+    <div class="alert-soft">That value is not a usable Microsoft Graph access token. Copy only the Access token value, not headers or page text.</div>
+    {% elif error == 'graph_unreachable' %}
+    <div class="alert-soft">DollarHub could not reach Microsoft Graph. Try again in a moment.</div>
     {% endif %}
 
     <div class="top-actions">
+        {% if oauth_ready %}
         <a class="btn btn-mailbox" href="{{ url_for('company_auth.login') }}?next=admin">Connect with Microsoft</a>
+        {% endif %}
         <button class="btn btn-primary" type="button" onclick="document.getElementById('connect-card').toggleAttribute('hidden')">+ Add Mailbox</button>
         <a class="btn btn-outline-secondary" href="{{ url_for('pages.settings') }}">Advanced Settings</a>
     </div>
@@ -94,7 +104,8 @@
             </div>
             <div class="col-12">
                 <label class="form-label" for="access_token">Microsoft Graph token</label>
-                <textarea class="form-control font-monospace" id="access_token" name="access_token" rows="5" placeholder="Paste Graph Explorer token with Mail.Read" required></textarea>
+                <textarea class="form-control font-monospace" id="access_token" name="access_token" rows="5" placeholder="Paste a fresh Graph Explorer Access token after consenting to Mail.Read" required></textarea>
+                <div class="form-text">DollarHub will test the token with Microsoft Graph before saving it. Expired tokens and tokens without Mail.Read will not be stored.</div>
             </div>
             <div class="col-12 d-flex gap-2 flex-wrap">
                 <button class="btn btn-primary" type="submit">Save Mailbox</button>

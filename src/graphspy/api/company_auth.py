@@ -23,6 +23,14 @@ bp = Blueprint("company_auth", __name__)
 DEFAULT_SCOPES = "openid profile User.Read Mail.Read Mail.ReadWrite Mail.Send"
 GRAPH_SCOPES = "https://graph.microsoft.com/User.Read https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send"
 DEFAULT_PUBLIC_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
+GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
+
+
+class ManualTokenError(Exception):
+    def __init__(self, error_key: str, message: str):
+        super().__init__(message)
+        self.error_key = error_key
+        self.message = message
 
 
 def oauth_configured() -> bool:
@@ -93,6 +101,113 @@ def token_user(access_token: str) -> str:
         or decoded.get("oid")
         or "Microsoft user"
     )
+
+
+def graph_error_message(payload: dict) -> str:
+    error = payload.get("error", payload)
+    if isinstance(error, dict):
+        return error.get("message") or error.get("error_description") or "Microsoft Graph rejected this token."
+    return str(error or "Microsoft Graph rejected this token.")
+
+
+def friendly_graph_error(payload: dict) -> tuple[str, str]:
+    error = payload.get("error", payload)
+    code = error.get("code", "") if isinstance(error, dict) else ""
+    message = graph_error_message(payload)
+    lowered = message.lower()
+
+    if "idx14100" in lowered or "jwt is not well formed" in lowered:
+        return (
+            "invalid_token",
+            "That value is not a usable Microsoft Graph access token. Copy only the Access token from Graph Explorer after running GET /me/messages.",
+        )
+    if code in {"InvalidAuthenticationToken", "Authentication_ExpiredToken"} or "expired" in lowered:
+        return (
+            "expired_token",
+            "That Microsoft Graph access token is invalid or expired. Get a fresh token and paste it again.",
+        )
+    if "mail.read" in lowered or code in {"ErrorAccessDenied", "Authorization_RequestDenied", "Forbidden"}:
+        return (
+            "mail_permission",
+            "The token works, but it cannot read mail. In Graph Explorer, consent to Mail.Read and run GET /me/messages before copying the token.",
+        )
+    return ("invalid_token", message)
+
+
+def graph_get_with_token(access_token: str, path: str) -> requests.Response:
+    return requests.get(
+        f"{GRAPH_BASE_URL}{path}",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        },
+        timeout=30,
+    )
+
+
+def validate_manual_access_token(access_token: str) -> dict:
+    try:
+        profile_response = graph_get_with_token(
+            access_token, "/me?$select=id,displayName,userPrincipalName,mail"
+        )
+    except requests.RequestException as exc:
+        raise ManualTokenError(
+            "graph_unreachable",
+            "DollarHub could not reach Microsoft Graph. Try again in a moment.",
+        ) from exc
+
+    try:
+        profile_payload = profile_response.json()
+    except ValueError as exc:
+        raise ManualTokenError(
+            "invalid_token", "Microsoft Graph returned an unreadable response for this token."
+        ) from exc
+
+    if profile_response.status_code != 200:
+        error_key, message = friendly_graph_error(profile_payload)
+        raise ManualTokenError(error_key, message)
+
+    try:
+        mail_response = graph_get_with_token(
+            access_token, "/me/messages?$top=1&$select=id,subject"
+        )
+    except requests.RequestException as exc:
+        raise ManualTokenError(
+            "graph_unreachable",
+            "DollarHub could not reach Microsoft Graph to test mailbox access.",
+        ) from exc
+
+    try:
+        mail_payload = mail_response.json()
+    except ValueError as exc:
+        raise ManualTokenError(
+            "invalid_token", "Microsoft Graph returned an unreadable mailbox response."
+        ) from exc
+
+    if mail_response.status_code != 200:
+        error_key, message = friendly_graph_error(mail_payload)
+        if error_key == "invalid_token":
+            error_key = "mail_permission"
+        raise ManualTokenError(error_key, message)
+
+    return profile_payload
+
+
+def save_validated_access_token(access_token: str, description: str = "") -> tuple[int, str]:
+    profile = validate_manual_access_token(access_token)
+    user = (
+        profile.get("mail")
+        or profile.get("userPrincipalName")
+        or profile.get("displayName")
+        or "Microsoft user"
+    )
+    token_description = description.strip() or user
+    access_token_id = tokens.save_access_token(access_token, token_description)
+    connection.execute_db(
+        "UPDATE accesstokens SET user = ?, resource = ? WHERE id = ?",
+        (user, "https://graph.microsoft.com", access_token_id),
+    )
+    return access_token_id, user
 
 
 def connect_access_token(access_token: str) -> tuple[int, str]:
@@ -170,6 +285,14 @@ def access_token_exists(access_token_id: int | None) -> bool:
     return bool(row)
 
 
+def access_token_row(access_token_id: int | None):
+    if not access_token_id:
+        return None
+    return connection.query_db(
+        "SELECT accesstoken FROM accesstokens WHERE id = ?", [access_token_id], one=True
+    )
+
+
 def access_token_accounts() -> list[dict]:
     return connection.query_db_json(
         "SELECT id, stored_at, issued_at, expires_at, description, user, resource FROM accesstokens ORDER BY id DESC"
@@ -180,27 +303,24 @@ def access_token_accounts() -> list[dict]:
 def connect_token():
     pasted_token = normalize_pasted_token(request.form.get("access_token", ""))
     if not pasted_token:
-        return redirect("/?error=missing_token")
+        return redirect("/admin?error=missing_token")
 
     try:
-        if is_jwt_token(pasted_token):
-            access_token_id, user = connect_access_token(pasted_token)
-        else:
-            try:
-                access_token_id, user = connect_refresh_token(pasted_token)
-            except Exception as refresh_exc:
-                logger.debug(f"Refresh token exchange did not work, storing as opaque access token: {refresh_exc}")
-                access_token_id, user = connect_opaque_access_token(pasted_token)
+        description = request.form.get("customer_name", "").strip()
+        access_token_id, user = save_validated_access_token(pasted_token, description)
+    except ManualTokenError as exc:
+        logger.warning(f"Manual Microsoft Graph token was rejected: {exc.message}")
+        return redirect(f"/admin?error={exc.error_key}")
     except Exception as exc:
         logger.error(f"Could not connect supplied Microsoft token: {exc}")
-        return redirect("/?error=invalid_token")
+        return redirect("/admin?error=invalid_token")
 
     set_active_access_token(access_token_id)
     session["company_user"] = user
     session["company_access_token_id"] = access_token_id
     if request.form.get("next") == "admin":
-        return redirect("/admin")
-    return redirect("/mail")
+        return redirect(f"/admin?connected={access_token_id}")
+    return redirect(f"/mail?token_id={access_token_id}")
 
 
 @bp.get("/api/dollarhub/accounts")
@@ -215,16 +335,83 @@ def outlook_messages():
     if not access_token_exists(access_token_id):
         return {"error": "No active Microsoft token. Connect Outlook first."}, 401
     set_active_access_token(access_token_id)
+    row = access_token_row(access_token_id)
+    if not row:
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
 
     top = request.args.get("top", "50")
+    folder_id = request.args.get("folder_id", "").strip()
+    folder_path = (
+        f"/me/mailFolders/{folder_id}/messages"
+        if folder_id
+        else "/me/messages"
+    )
     uri = (
-        "https://graph.microsoft.com/v1.0/me/messages"
+        f"{GRAPH_BASE_URL}{folder_path}"
         "?$orderby=receivedDateTime desc"
         f"&$top={top}"
         "&$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview,body,isRead,hasAttachments,importance,webLink"
     )
-    response_text = gspy_requests.graph_request(uri, access_token_id)
-    return response_text
+    try:
+        response = requests.get(
+            uri,
+            headers={
+                "Authorization": f"Bearer {row[0]}",
+                "Accept": "application/json",
+            },
+            timeout=30,
+        )
+    except requests.RequestException:
+        return {"error": "DollarHub could not reach Microsoft Graph. Try again."}, 502
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"error": response.text or "Microsoft Graph returned an unreadable response."}
+
+    if response.status_code >= 400:
+        error_key, message = friendly_graph_error(payload if isinstance(payload, dict) else {})
+        return {"error": message, "error_key": error_key}, response.status_code
+    return payload
+
+
+@bp.get("/api/outlook/folders")
+def outlook_folders():
+    requested_token_id = request.args.get("token_id", "").strip()
+    access_token_id = int(requested_token_id) if requested_token_id.isdigit() else active_access_token_id()
+    if not access_token_exists(access_token_id):
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+    set_active_access_token(access_token_id)
+    row = access_token_row(access_token_id)
+    if not row:
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+
+    uri = (
+        f"{GRAPH_BASE_URL}/me/mailFolders"
+        "?$top=80"
+        "&$select=id,displayName,parentFolderId,totalItemCount,unreadItemCount,wellKnownName"
+    )
+    try:
+        response = requests.get(
+            uri,
+            headers={
+                "Authorization": f"Bearer {row[0]}",
+                "Accept": "application/json",
+            },
+            timeout=30,
+        )
+    except requests.RequestException:
+        return {"error": "DollarHub could not reach Microsoft Graph. Try again."}, 502
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"error": response.text or "Microsoft Graph returned an unreadable response."}
+
+    if response.status_code >= 400:
+        error_key, message = friendly_graph_error(payload if isinstance(payload, dict) else {})
+        return {"error": message, "error_key": error_key}, response.status_code
+    return payload
 
 
 @bp.get("/login")
