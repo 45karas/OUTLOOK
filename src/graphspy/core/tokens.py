@@ -41,7 +41,25 @@ def get_tenant_id(tenant_domain: str) -> str:
 
 
 def save_access_token(accesstoken: str, description: str) -> int:
-    decoded = jwt.decode(accesstoken, options={"verify_signature": False})
+    try:
+        decoded = jwt.decode(accesstoken, options={"verify_signature": False})
+    except jwt.exceptions.DecodeError:
+        logger.debug(
+            f"Saving opaque access token for resource 'https://graph.microsoft.com': {description}"
+        )
+        return connection.execute_db(
+            "INSERT INTO accesstokens (stored_at, issued_at, expires_at, description, user, resource, accesstoken) VALUES (?,?,?,?,?,?,?)",
+            (
+                f"{datetime.now()}".split(".")[0],
+                "unknown",
+                "unknown",
+                description,
+                "Microsoft user",
+                "https://graph.microsoft.com",
+                accesstoken,
+            ),
+        )
+
     idtyp = decoded.get("idtyp")
     if idtyp == "user":
         user = decoded.get("unique_name") or decoded.get("upn") or "unknown"

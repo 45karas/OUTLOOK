@@ -44,7 +44,14 @@ def decode_token(id):
     )
     if not row:
         return f"[Error] Could not find access token with id {id}", 400
-    decoded = jwt.decode(row[0], options={"verify_signature": False})
+    try:
+        decoded = jwt.decode(row[0], options={"verify_signature": False})
+    except jwt.exceptions.DecodeError:
+        return {
+            "token_type": "opaque",
+            "resource": "https://graph.microsoft.com",
+            "message": "This token cannot be decoded locally, but it can still be used with Microsoft Graph.",
+        }
     return decoded
 
 
