@@ -279,7 +279,6 @@
             <div></div>
             <div class="top-actions">
                 <select class="account-select" id="account-select"></select>
-                <a class="btn" href="{{ url_for('pages.admin') }}">Admin</a>
                 <button class="btn" id="refresh-mail" type="button">Refresh</button>
             </div>
         </header>
@@ -294,9 +293,6 @@
         <main class="main">
             <aside class="rail" aria-label="Apps">
                 <button class="rail-item active" title="Mail">Mail</button>
-                <button class="rail-item" title="Calendar">Cal</button>
-                <button class="rail-item" title="People">People</button>
-                <button class="rail-item" title="Tasks">Tasks</button>
             </aside>
 
             <aside class="folders">
@@ -312,7 +308,7 @@
 
             <section class="message-area">
                 <div class="toolbar">
-                    <button class="btn btn-primary" type="button" disabled>New mail</button>
+                    <button class="btn btn-primary" type="button" id="new-mail">New mail</button>
                     <button class="btn" type="button" disabled>Delete</button>
                     <button class="btn" type="button" disabled>Archive</button>
                     <button class="btn" type="button" disabled>Report</button>
@@ -343,6 +339,23 @@
         </main>
     </div>
 
+    <div id="compose-panel" style="display:none; position:fixed; right:24px; bottom:24px; width:min(560px, calc(100vw - 32px)); background:#fff; border:1px solid #c8c6c4; box-shadow:0 18px 48px rgba(0,0,0,.24); z-index:20;">
+        <div style="min-height:44px; background:#0f6cbd; color:#fff; display:flex; align-items:center; justify-content:space-between; padding:0 .85rem; font-weight:600;">
+            <span>New message</span>
+            <button id="close-compose" type="button" style="border:0; background:transparent; color:#fff; font-size:1.2rem; cursor:pointer;">x</button>
+        </div>
+        <form id="send-form" style="display:grid; gap:.65rem; padding:.9rem;">
+            <input id="send-to" type="email" multiple placeholder="To" required style="border:0; border-bottom:1px solid #edebe9; min-height:38px; outline:0;">
+            <input id="send-subject" type="text" placeholder="Subject" required style="border:0; border-bottom:1px solid #edebe9; min-height:38px; outline:0;">
+            <textarea id="send-body" rows="9" placeholder="Type your message" style="resize:vertical; border:1px solid #edebe9; padding:.75rem; outline:0;"></textarea>
+            <div id="send-status" class="muted"></div>
+            <div style="display:flex; gap:.5rem; justify-content:flex-start;">
+                <button class="btn btn-primary" type="submit">Send</button>
+                <button class="btn" type="button" id="discard-compose">Discard</button>
+            </div>
+        </form>
+    </div>
+
     <script>
         const mailList = document.getElementById('mail-list-content');
         const readingPane = document.getElementById('reading-pane-content');
@@ -361,8 +374,11 @@
             inbox: 'Inbox',
             drafts: 'Drafts',
             sentitems: 'Sent',
+            sent: 'Sent',
             deleteditems: 'Deleted',
+            deleted: 'Deleted',
             junkemail: 'Junk',
+            junk: 'Junk',
             archive: 'Archive'
         };
 
@@ -380,15 +396,15 @@
         }
 
         function folderRank(folder) {
-            const key = String(folder.wellKnownName || folder.displayName || '').toLowerCase().replace(/\s+/g, '');
-            const ranks = { inbox: 1, drafts: 2, sentitems: 3, junkemail: 4, deleteditems: 5, archive: 6 };
+            const key = String(folder.displayName || '').toLowerCase().replace(/\s+/g, '');
+            const ranks = { inbox: 1, drafts: 2, sentitems: 3, sent: 3, junkemail: 4, junk: 4, deleteditems: 5, deleted: 5, archive: 6 };
             return ranks[key] || 20;
         }
 
         function cleanError(message) {
             const text = String(message || '');
             if (text.toLowerCase().includes('access is denied') || text.toLowerCase().includes('mail.read')) {
-                return 'Access is denied. This token does not have Mail.Read permission for this mailbox.';
+                return 'Access is denied. This token does not have the required Microsoft Graph permission for this mailbox.';
             }
             if (text.toLowerCase().includes('expired')) {
                 return 'This access token has expired. Save a fresh Graph Explorer access token in Admin.';
@@ -398,7 +414,7 @@
 
         function showError(message) {
             const clean = cleanError(message);
-            mailList.innerHTML = `<div class="error"><div class="error-card">${escapeHtml(clean)}<br><br><a class="btn btn-primary" href="{{ url_for('pages.admin') }}">Update token in Admin</a></div></div>`;
+            mailList.innerHTML = `<div class="error"><div class="error-card">${escapeHtml(clean)}<br><br>Use a fresh Microsoft Graph token with Mail.Read to load mail, and Mail.Send to send.</div></div>`;
             readingPane.innerHTML = `<div class="empty"><div><h2>Mailbox needs a valid token</h2><p>${escapeHtml(clean)}</p></div></div>`;
         }
 
@@ -410,12 +426,12 @@
             }
             const sorted = [...folders].sort((a, b) => folderRank(a) - folderRank(b) || String(a.displayName).localeCompare(String(b.displayName)));
             if (!activeFolderId) {
-                activeFolderId = (sorted.find(folder => String(folder.wellKnownName || '').toLowerCase() === 'inbox') || sorted[0]).id;
+                activeFolderId = (sorted.find(folder => String(folder.displayName || '').toLowerCase() === 'inbox') || sorted[0]).id;
             }
             for (const folder of sorted) {
                 const button = document.createElement('button');
                 button.className = `folder-row ${String(folder.id) === String(activeFolderId) ? 'active' : ''}`;
-                const key = String(folder.wellKnownName || folder.displayName || '').toLowerCase().replace(/\s+/g, '');
+                const key = String(folder.displayName || '').toLowerCase().replace(/\s+/g, '');
                 button.innerHTML = `
                     <span>${escapeHtml(folderIcons[key] || 'Folder')}</span>
                     <span>${escapeHtml(folder.displayName || 'Folder')}</span>
@@ -555,6 +571,47 @@
         document.getElementById('refresh-mail').addEventListener('click', reloadAll);
         document.getElementById('reload-folder').addEventListener('click', loadMail);
         searchInput.addEventListener('input', renderList);
+        document.getElementById('new-mail').addEventListener('click', () => {
+            document.getElementById('compose-panel').style.display = 'block';
+            document.getElementById('send-to').focus();
+        });
+        document.getElementById('close-compose').addEventListener('click', () => {
+            document.getElementById('compose-panel').style.display = 'none';
+        });
+        document.getElementById('discard-compose').addEventListener('click', () => {
+            document.getElementById('send-form').reset();
+            document.getElementById('send-status').textContent = '';
+            document.getElementById('compose-panel').style.display = 'none';
+        });
+        document.getElementById('send-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const status = document.getElementById('send-status');
+            status.textContent = 'Sending...';
+            try {
+                const response = await fetch('/api/outlook/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token_id: activeTokenId,
+                        to: document.getElementById('send-to').value,
+                        subject: document.getElementById('send-subject').value,
+                        body: document.getElementById('send-body').value
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok || data.error) {
+                    throw new Error(data.error || 'Message could not be sent.');
+                }
+                status.textContent = 'Sent.';
+                setTimeout(() => {
+                    document.getElementById('send-form').reset();
+                    document.getElementById('compose-panel').style.display = 'none';
+                    status.textContent = '';
+                }, 900);
+            } catch (error) {
+                status.textContent = cleanError(error.message);
+            }
+        });
         reloadAll();
     </script>
 </body>

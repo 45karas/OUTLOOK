@@ -455,7 +455,7 @@ def outlook_folders():
     uri = (
         f"{GRAPH_BASE_URL}/me/mailFolders"
         "?$top=80"
-        "&$select=id,displayName,parentFolderId,totalItemCount,unreadItemCount,wellKnownName"
+        "&$select=id,displayName,parentFolderId,totalItemCount,unreadItemCount"
     )
     try:
         response = requests.get(
@@ -478,6 +478,64 @@ def outlook_folders():
         error_key, message = friendly_graph_error(payload if isinstance(payload, dict) else {})
         return {"error": message, "error_key": error_key}, response.status_code
     return payload
+
+
+@bp.post("/api/outlook/send")
+def outlook_send():
+    data = request.get_json(silent=True) or {}
+    requested_token_id = str(data.get("token_id") or "").strip()
+    access_token_id = int(requested_token_id) if requested_token_id.isdigit() else active_access_token_id()
+    if not access_token_exists(access_token_id):
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+    row = access_token_row(access_token_id)
+    if not row:
+        return {"error": "No active Microsoft token. Connect Outlook first."}, 401
+
+    to_address = str(data.get("to") or "").strip()
+    subject = str(data.get("subject") or "").strip()
+    body = str(data.get("body") or "").strip()
+    if not to_address or not subject:
+        return {"error": "Recipient and subject are required."}, 400
+    recipients = [
+        {"emailAddress": {"address": email.strip()}}
+        for email in to_address.split(",")
+        if email.strip()
+    ]
+    if not recipients:
+        return {"error": "At least one valid recipient is required."}, 400
+
+    message = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "HTML", "content": body.replace("\n", "<br>")},
+            "toRecipients": recipients,
+        },
+        "saveToSentItems": True,
+    }
+    try:
+        response = requests.post(
+            f"{GRAPH_BASE_URL}/me/sendMail",
+            headers={
+                "Authorization": f"Bearer {row[0]}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json=message,
+            timeout=30,
+        )
+    except requests.RequestException:
+        return {"error": "DollarHub could not reach Microsoft Graph. Try again."}, 502
+
+    if response.status_code in {202, 204}:
+        return {"ok": True}
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"error": response.text or "Microsoft Graph rejected this send request."}
+    error_key, message_text = friendly_graph_error(payload if isinstance(payload, dict) else {})
+    if error_key in {"invalid_token", "mail_permission"}:
+        message_text = "This token cannot send mail. Get a fresh token with Mail.Send permission."
+    return {"error": message_text, "error_key": error_key}, response.status_code
 
 
 @bp.get("/login")
