@@ -1,0 +1,18 @@
+{% extends 'layout.html'%}
+
+{% block content %}
+<div class="container py-5">
+    <div class="alert alert-warning border-warning-subtle">
+        <h1 class="h4">Microsoft login is not configured yet</h1>
+        <p class="mb-2">Add these Render environment variables, then redeploy:</p>
+        <ul class="mb-3">
+            <li>MS_TENANT_ID</li>
+            <li>MS_CLIENT_ID</li>
+            <li>MS_CLIENT_SECRET</li>
+            <li>MS_REDIRECT_URI</li>
+            <li>FLASK_SECRET_KEY</li>
+        </ul>
+        <p class="mb-0">Your redirect URI should look like: <code>https://YOUR-RENDER-APP.onrender.com/auth/callback</code></p>
+    </div>
+</div>
+{% endblock content %}

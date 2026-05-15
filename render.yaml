@@ -1,4 +1,4 @@
-﻿services:
+services:
   - type: web
     name: outlook-graphspy
     runtime: python
@@ -8,3 +8,14 @@
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: MS_TENANT_ID
+        sync: false
+      - key: MS_CLIENT_ID
+        sync: false
+      - key: MS_CLIENT_SECRET
+        sync: false
+      - key: MS_REDIRECT_URI
+        sync: false
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+

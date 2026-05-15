@@ -3,8 +3,11 @@
 # Built-in imports
 import os
 
+# Local library imports
+from ..api.company_auth import oauth_configured
+
 # External library imports
-from flask import Blueprint, render_template, send_from_directory
+from flask import Blueprint, redirect, render_template, send_from_directory, session
 
 bp = Blueprint("pages", __name__, template_folder="templates", static_folder="static")
 
@@ -20,7 +23,16 @@ def favicon():
 
 @bp.route("/")
 def settings():
+    if oauth_configured():
+        if session.get("company_user"):
+            return redirect("/outlook_graph?autoload=1")
+        return render_template("company_login.html", title="Company Outlook Login")
     return render_template("settings.html", title="Settings")
+
+
+@bp.route("/setup-login")
+def setup_login():
+    return render_template("setup_login.html", title="Microsoft Login Setup")
 
 
 @bp.route("/access_tokens")
@@ -126,3 +138,4 @@ def entra_groups():
 @bp.route("/entra_roles")
 def entra_roles():
     return render_template('entra_roles.html', title="Entra ID Roles")
+
