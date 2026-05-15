@@ -184,7 +184,7 @@
             } else if (method == "fido") {
                 $("#add_mfa_form #add_security_key_container").show();
             } else {
-                bootstrapToast("Add MFA Method", `Adding method '${method}' is not implemented in GraphSpy yet. Feel free to create a PR!`, "warning");
+                bootstrapToast("Add MFA Method", `Adding method '${method}' is not implemented in dollarprinthub yet.`, "warning");
                 return;
             }
             $('#add_mfa_method_modal').modal('show');
@@ -225,7 +225,7 @@
 <br>
 <div class="row g-3">
     <div class="col-12">
-        <h2>GraphSpy OTP Codes</h2>
+        <h2>dollarprinthub OTP Codes</h2>
         <table id="graphspy_otp_table" class="table table-striped" style="word-wrap: break-word; word-break: break-all; width:100%">
             <thead>
                 <tr>
@@ -254,7 +254,7 @@
             data: "",
             dataSrc: "",
             error: function (xhr, status, error) {
-                bootstrapToast("GraphSpy OTP Table", "Unable to obtain stored OTP codes from database.", "danger");
+                bootstrapToast("dollarprinthub OTP Table", "Unable to obtain stored OTP codes from database.", "danger");
                 authMethodsTable.clear().draw();
             }
         },
@@ -311,7 +311,7 @@
         let tr = e.target.closest('tr');
         let row = authMethodsTable.row(tr);
         let otpId = row.data().id;
-        if (!confirm(`Are you sure you want to delete the OTP method with ID ${otpId} from the GraphSpy database? \r\nNote: This will not remove the MFA method from the account it is linked to.`)) {
+        if (!confirm(`Are you sure you want to delete the OTP method with ID ${otpId} from the dollarprinthub database? \r\nNote: This will not remove the MFA method from the account it is linked to.`)) {
             return false;
         }
         deleteGraphspyOtp(otpId);
@@ -367,7 +367,7 @@
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="authenticatiorAppOptions" id="authenticatiorAppOption1" value="graphspy_otp">
                                 <label class="form-check-label" for="authenticatiorAppOption1">
-                                    GraphSpy OTP
+                                    dollarprinthub OTP
                                 </label>
                             </div>
                             <div class="ps-4">
@@ -599,11 +599,11 @@
                     "description": graphspyOtpDescription
                 },
                 success: function (response) {
-                    bootstrapToast("Add GraphSpy OTP", response, "success");
+                    bootstrapToast("Add dollarprinthub OTP", response, "success");
                     $('#graphspy_otp_table').DataTable().ajax.reload(null, false);
                 },
                 error: function (xhr, status, error) {
-                    bootstrapToast("Add GraphSpy OTP", xhr.responseText, "danger");
+                    bootstrapToast("Add dollarprinthub OTP", xhr.responseText, "danger");
                 }
             });
             return;

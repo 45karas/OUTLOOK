@@ -220,7 +220,7 @@
         teamsMessageCardHeader.append('<i id="info-icon" class="fi fi-rr-info icon-hover-change ps-2" style="vertical-align: -0.15em; cursor: pointer"></i>');
         let teamsMessageCardBody = $('<div class="card-body"></div>');
         teamsMessageCardBody.append(DOMPurify.sanitize(messageJson.content, { ADD_ATTR: ['itemtype'] }));
-        // Replace AMSImage URLs with requests to the /api/get_teams_image GraphSpy endpoint
+        // Replace AMSImage URLs with requests to the /api/get_teams_image endpoint
         for (const image_element of teamsMessageCardBody.find("img[itemtype$='AMSImage']")) {
             image_element_jquery = $(image_element)
             image_element_jquery.attr("src", `${window.location.origin}/api/get_teams_image?access_token_id=${$("#ms_teams_form #access_token_id").val()}&image_uri=${encodeURIComponent(image_element_jquery.attr("src"))}`)
