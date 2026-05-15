@@ -59,10 +59,40 @@ def set_active_access_token(access_token_id: int) -> None:
         )
 
 
+def token_user(access_token: str) -> str:
+    decoded = jwt.decode(access_token, options={"verify_signature": False})
+    return (
+        decoded.get("preferred_username")
+        or decoded.get("upn")
+        or decoded.get("unique_name")
+        or decoded.get("oid")
+        or "Microsoft user"
+    )
+
+
+@bp.post("/connect-token")
+def connect_token():
+    access_token = request.form.get("access_token", "").strip()
+    if not access_token:
+        return redirect("/?error=missing_token")
+
+    try:
+        user = token_user(access_token)
+        access_token_id = tokens.save_access_token(access_token, f"Connected Outlook token for {user}")
+    except Exception as exc:
+        logger.error(f"Could not save supplied access token: {exc}")
+        return redirect("/?error=invalid_token")
+
+    set_active_access_token(access_token_id)
+    session["company_user"] = user
+    session["company_access_token_id"] = access_token_id
+    return redirect("/outlook_graph?autoload=1")
+
+
 @bp.get("/login")
 def login():
     if not oauth_configured():
-        return redirect("/setup-login")
+        return redirect("/")
 
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
@@ -111,14 +141,7 @@ def callback():
         return payload.get("error_description") or payload.get("error") or "Token exchange failed", 400
 
     access_token = payload["access_token"]
-    decoded = jwt.decode(access_token, options={"verify_signature": False})
-    user = (
-        decoded.get("preferred_username")
-        or decoded.get("upn")
-        or decoded.get("unique_name")
-        or decoded.get("oid")
-        or "Microsoft user"
-    )
+    user = token_user(access_token)
     access_token_id = tokens.save_access_token(access_token, f"Microsoft company login for {user}")
     set_active_access_token(access_token_id)
 

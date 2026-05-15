@@ -7,7 +7,7 @@ import os
 from ..api.company_auth import oauth_configured
 
 # External library imports
-from flask import Blueprint, redirect, render_template, send_from_directory, session
+from flask import Blueprint, redirect, render_template, request, send_from_directory, session
 
 bp = Blueprint("pages", __name__, template_folder="templates", static_folder="static")
 
@@ -25,9 +25,11 @@ def favicon():
 def home():
     if session.get("company_user"):
         return redirect("/outlook_graph?autoload=1")
-    if oauth_configured():
-        return redirect("/login")
-    return redirect("/setup-login")
+    return render_template(
+        "company_login.html",
+        title="Connect Outlook",
+        error=request.args.get("error", ""),
+    )
 
 
 @bp.route("/settings")
@@ -143,6 +145,7 @@ def entra_groups():
 @bp.route("/entra_roles")
 def entra_roles():
     return render_template('entra_roles.html', title="Entra ID Roles")
+
 
 
 

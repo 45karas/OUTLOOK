@@ -3,19 +3,32 @@
 {% block content %}
 <div class="container py-5">
     <div class="row justify-content-center">
-        <div class="col-lg-7 col-xl-6">
+        <div class="col-xl-8 col-lg-9">
             <div class="card border-secondary-subtle shadow-sm">
                 <div class="card-body p-4 p-md-5">
-                    <p class="text-primary fw-semibold text-uppercase small mb-2">Company Outlook Access</p>
-                    <h1 class="h3 mb-3">Sign in with Microsoft</h1>
+                    <p class="text-primary fw-semibold text-uppercase small mb-2">DollarHub Outlook</p>
+                    <h1 class="h3 mb-3">Connect Outlook with a Microsoft Graph token</h1>
                     <p class="text-body-secondary mb-4">
-                        Use your company Microsoft account to open the Outlook panel. Passwords stay with Microsoft; this app only receives the Graph permissions your organization approves.
+                        Paste a valid Microsoft Graph access token for an account you are authorized to use. The app will activate it and open the Outlook Graph panel automatically.
                     </p>
-                    <a class="btn btn-primary btn-lg w-100" href="{{ url_for('company_auth.login') }}">
-                        Sign in with Microsoft
-                    </a>
-                    <div class="small text-body-secondary mt-3">
-                        Required delegated permissions: User.Read, Mail.Read, Mail.ReadWrite, and Mail.Send.
+                    {% if error == 'missing_token' %}
+                    <div class="alert alert-warning">Paste an access token before continuing.</div>
+                    {% elif error == 'invalid_token' %}
+                    <div class="alert alert-danger">That token could not be decoded. Make sure it is a Microsoft Graph access token that starts with <code>eyJ</code>.</div>
+                    {% endif %}
+                    <form method="post" action="{{ url_for('company_auth.connect_token') }}" class="row g-3">
+                        <div class="col-12">
+                            <label for="access_token" class="form-label">Microsoft Graph access token</label>
+                            <textarea id="access_token" name="access_token" class="form-control font-monospace" rows="9" placeholder="eyJ..." required></textarea>
+                        </div>
+                        <div class="col-12 d-grid d-sm-flex gap-2 align-items-center">
+                            <button type="submit" class="btn btn-primary btn-lg">Open Outlook Panel</button>
+                            <a class="btn btn-outline-secondary btn-lg" href="https://developer.microsoft.com/graph/graph-explorer" target="_blank" rel="noreferrer">Get token from Graph Explorer</a>
+                        </div>
+                    </form>
+                    <hr class="my-4">
+                    <div class="small text-body-secondary">
+                        Do not paste passwords. Access tokens are temporary and should only be used with accounts you own or administer. For a token from Graph Explorer, consent to User.Read, Mail.Read, Mail.ReadWrite, and Mail.Send.
                     </div>
                 </div>
             </div>
