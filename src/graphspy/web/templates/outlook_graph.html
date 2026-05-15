@@ -157,6 +157,8 @@
 
 <script>
     $(document).ready(function() {
+        $.ajaxSetup({ timeout: 60000 });
+
         // Dynamically set the max-height of the containers to whatever space is left
         $("#email_list_group").css("max-height", `calc(100vh - ${document.getElementById("email_list_group").getBoundingClientRect().top}px - 10px)`);
         $("#email_content_container").css("max-height", `calc(100vh - ${document.getElementById("email_content_container").getBoundingClientRect().top}px - 10px)`);

@@ -14,9 +14,13 @@ from ..core import user_agent as ua
 from flask import current_app
 
 
+DEFAULT_TIMEOUT = 45
+
+
 def _prepare_kwargs(**kwargs):
     """Prepare kwargs with global proxy applied if not explicitly set"""
     kwargs = kwargs.copy()
+    kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
     if 'proxies' not in kwargs and current_app.config["proxy"]:
         proxies = {
             "http": current_app.config["proxy"],
@@ -72,9 +76,20 @@ def graph_request(
         "Authorization": f"Bearer {row[0]}",
         "User-Agent": ua.get(),
     }
-    response = request(
-        method, graph_uri, headers=headers, **({"json": body} if body else {})
-    )
+    try:
+        response = request(
+            method, graph_uri, headers=headers, **({"json": body} if body else {})
+        )
+    except requests.RequestException as exc:
+        logger.exception("Microsoft Graph request failed")
+        return json.dumps(
+            {
+                "error": {
+                    "code": "RequestFailed",
+                    "message": f"Request to Microsoft Graph failed: {exc}",
+                }
+            }
+        )
     try:
         return json.dumps(response.json())
     except ValueError:
