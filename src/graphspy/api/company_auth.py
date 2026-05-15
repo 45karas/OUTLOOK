@@ -5,6 +5,9 @@ import os
 import re
 import secrets
 from datetime import datetime
+from email import message_from_bytes
+from email.header import decode_header, make_header
+from email.utils import getaddresses, parsedate_to_datetime
 from urllib.parse import quote, urlencode
 
 # External library imports
@@ -209,6 +212,194 @@ def graph_get_with_token(access_token: str, path: str) -> requests.Response:
         },
         timeout=30,
     )
+
+
+def first_present(*values):
+    for value in values:
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def decode_mail_header(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        return str(make_header(decode_header(value)))
+    except Exception:
+        return value
+
+
+def email_person(name: str = "", address: str = "") -> dict:
+    clean_name = decode_mail_header(name).strip()
+    clean_address = (address or "").strip()
+    return {"emailAddress": {"name": clean_name or clean_address, "address": clean_address}}
+
+
+def normalize_person(value) -> dict | None:
+    if not value:
+        return None
+    if isinstance(value, dict):
+        if "emailAddress" in value:
+            email_address = value.get("emailAddress") or {}
+            return email_person(email_address.get("name", ""), email_address.get("address", ""))
+        return email_person(value.get("name", ""), value.get("address", ""))
+    if isinstance(value, str):
+        parsed = getaddresses([value])
+        if parsed:
+            name, address = parsed[0]
+            return email_person(name, address)
+        return email_person(value, "")
+    return None
+
+
+def normalize_recipients(value) -> list[dict]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        recipients = []
+        for item in value:
+            person = normalize_person(item)
+            if person:
+                recipients.append(person)
+        return recipients
+    if isinstance(value, str):
+        return [email_person(name, address) for name, address in getaddresses([value])]
+    return []
+
+
+def body_preview_from_mime(email_message) -> str:
+    parts = email_message.walk() if email_message.is_multipart() else [email_message]
+    for part in parts:
+        content_type = part.get_content_type()
+        if content_type != "text/plain":
+            continue
+        try:
+            text = part.get_content()
+        except Exception:
+            payload = part.get_payload(decode=True) or b""
+            charset = part.get_content_charset() or "utf-8"
+            text = payload.decode(charset, errors="replace")
+        text = re.sub(r"\s+", " ", text).strip()
+        if text:
+            return text[:240]
+    return ""
+
+
+def normalize_message(raw: dict) -> dict:
+    message = dict(raw or {})
+    subject = first_present(
+        message.get("subject"),
+        message.get("Subject"),
+        message.get("displaySubject"),
+        message.get("itemSubject"),
+    )
+    from_person = normalize_person(
+        first_present(message.get("from"), message.get("sender"), message.get("From"), message.get("Sender"))
+    )
+    sender_person = normalize_person(first_present(message.get("sender"), message.get("Sender"), message.get("from"), message.get("From")))
+    to_recipients = normalize_recipients(first_present(message.get("toRecipients"), message.get("ToRecipients"), message.get("to"), message.get("To")))
+    cc_recipients = normalize_recipients(first_present(message.get("ccRecipients"), message.get("CcRecipients"), message.get("cc"), message.get("Cc")))
+    received = first_present(
+        message.get("receivedDateTime"),
+        message.get("ReceivedDateTime"),
+        message.get("dateTimeReceived"),
+        message.get("DateTimeReceived"),
+        message.get("sentDateTime"),
+        message.get("SentDateTime"),
+    )
+    preview = first_present(message.get("bodyPreview"), message.get("BodyPreview"), message.get("preview"), message.get("Preview"))
+
+    if subject is not None:
+        message["subject"] = decode_mail_header(str(subject)).strip()
+    if from_person:
+        message["from"] = from_person
+    if sender_person:
+        message["sender"] = sender_person
+    message["toRecipients"] = to_recipients
+    message["ccRecipients"] = cc_recipients
+    if received:
+        message["receivedDateTime"] = received
+    if preview:
+        message["bodyPreview"] = str(preview).strip()
+
+    display_from = message.get("from") or message.get("sender") or {}
+    display_email = display_from.get("emailAddress", {}) if isinstance(display_from, dict) else {}
+    display_to = []
+    for recipient in message.get("toRecipients") or []:
+        email_address = recipient.get("emailAddress", {}) if isinstance(recipient, dict) else {}
+        display_to.append(email_address.get("name") or email_address.get("address") or "")
+    message["dollarhubDisplay"] = {
+        "fromName": display_email.get("name") or display_email.get("address") or "Unknown sender",
+        "fromAddress": display_email.get("address") or "",
+        "subject": message.get("subject") or (message.get("bodyPreview") or "")[:90] or "(no subject)",
+        "preview": message.get("bodyPreview") or "",
+        "date": message.get("receivedDateTime") or message.get("sentDateTime") or message.get("lastModifiedDateTime") or "",
+        "to": [value for value in display_to if value],
+    }
+    return message
+
+
+def hydrate_message_from_mime(access_token: str, message: dict) -> dict:
+    message_id = message.get("id")
+    if not message_id:
+        return message
+    try:
+        response = requests.get(
+            f"{GRAPH_BASE_URL}/me/messages/{quote(message_id, safe='')}/$value",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30,
+        )
+    except requests.RequestException:
+        return message
+    if response.status_code != 200 or not response.content:
+        return message
+    try:
+        mime_message = message_from_bytes(response.content)
+    except Exception:
+        return message
+
+    if not message.get("subject"):
+        message["subject"] = decode_mail_header(mime_message.get("Subject", "")).strip()
+    if not (message.get("from") or {}).get("emailAddress", {}).get("address"):
+        from_people = getaddresses([mime_message.get("From", "")])
+        if from_people:
+            name, address = from_people[0]
+            message["from"] = email_person(name, address)
+            message["sender"] = message["from"]
+    if not message.get("toRecipients"):
+        message["toRecipients"] = [
+            email_person(name, address) for name, address in getaddresses([mime_message.get("To", "")])
+        ]
+    if not message.get("receivedDateTime"):
+        try:
+            parsed_date = parsedate_to_datetime(mime_message.get("Date", ""))
+            message["receivedDateTime"] = parsed_date.isoformat()
+        except Exception:
+            pass
+    if not message.get("bodyPreview"):
+        preview = body_preview_from_mime(mime_message)
+        if preview:
+            message["bodyPreview"] = preview
+    return normalize_message(message)
+
+
+def hydrate_missing_messages(access_token: str, messages: list[dict], limit: int = 40) -> list[dict]:
+    hydrated = []
+    checked = 0
+    for message in messages:
+        normalized = normalize_message(message)
+        display = normalized.get("dollarhubDisplay", {})
+        needs_hydration = (
+            display.get("fromName") == "Unknown sender"
+            or display.get("subject") == "(no subject)"
+            or not display.get("preview")
+        )
+        if needs_hydration and checked < limit:
+            normalized = hydrate_message_from_mime(access_token, normalized)
+            checked += 1
+        hydrated.append(normalized)
+    return hydrated
 
 
 def token_claims(access_token: str) -> dict:
@@ -538,7 +729,9 @@ def outlook_messages():
             next_link = next_payload.get("@odata.nextLink")
             page_count += 1
         payload["value"] = values
-        payload["dollarhubLoadedCount"] = len(values)
+    if isinstance(payload, dict) and isinstance(payload.get("value"), list):
+        payload["value"] = hydrate_missing_messages(row[0], payload.get("value", []), limit=60)
+        payload["dollarhubLoadedCount"] = len(payload["value"])
     return payload
 
 
@@ -590,7 +783,7 @@ def outlook_message(message_id):
     if response.status_code >= 400:
         error_key, message = friendly_graph_error(payload if isinstance(payload, dict) else {})
         return {"error": message, "error_key": error_key}, response.status_code
-    return payload
+    return hydrate_message_from_mime(row[0], normalize_message(payload))
 
 
 @bp.get("/api/outlook/folders")

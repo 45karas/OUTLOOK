@@ -385,7 +385,13 @@
             return person?.emailAddress?.name || person?.name || '';
         }
 
+        function displayOf(message) {
+            return message?.dollarhubDisplay || {};
+        }
+
         function senderName(message) {
+            const display = displayOf(message);
+            if (display.fromName && display.fromName !== 'Unknown sender') return display.fromName;
             return (
                 emailNameOf(message.from)
                 || emailAddressOf(message.from)
@@ -398,6 +404,8 @@
         }
 
         function senderAddress(message) {
+            const display = displayOf(message);
+            if (display.fromAddress) return display.fromAddress;
             return (
                 emailAddressOf(message.from)
                 || emailAddressOf(message.sender)
@@ -407,12 +415,29 @@
         }
 
         function subjectText(message) {
-            return message.subject || (message.bodyPreview ? message.bodyPreview.slice(0, 90) : '') || '(no subject)';
+            const display = displayOf(message);
+            return display.subject || message.subject || (messagePreview(message) ? messagePreview(message).slice(0, 90) : '') || '(no subject)';
+        }
+
+        function messagePreview(message) {
+            return displayOf(message).preview || message.bodyPreview || '';
+        }
+
+        function messageDate(message) {
+            return displayOf(message).date || message.receivedDateTime || message.sentDateTime || message.lastModifiedDateTime || '';
+        }
+
+        function recipientsText(message) {
+            const displayRecipients = displayOf(message).to || [];
+            const graphRecipients = (message.toRecipients || []).map(item => emailAddressOf(item)).filter(Boolean);
+            return [...displayRecipients, ...graphRecipients].filter(Boolean).join(', ');
         }
 
         function formatDate(value) {
             if (!value) return '';
-            return new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }).format(new Date(value));
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return String(value);
+            return new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }).format(date);
         }
 
         function folderRank(folder) {
@@ -478,8 +503,8 @@
             return messages.filter(message => [
                 senderName(message),
                 senderAddress(message),
-                message.subject,
-                message.bodyPreview,
+                subjectText(message),
+                messagePreview(message),
             ].some(value => String(value || '').toLowerCase().includes(query)));
         }
 
@@ -496,10 +521,10 @@
                 row.className = `mail-row ${message.isRead ? '' : 'unread'} ${selectedId === message.id ? 'active' : ''}`;
                 row.innerHTML = `
                     <span class="from">${escapeHtml(senderName(message))}</span>
-                    <span class="time">${escapeHtml(formatDate(message.receivedDateTime))}</span>
+                    <span class="time">${escapeHtml(formatDate(messageDate(message)))}</span>
                     <span class="subject">${escapeHtml(subjectText(message))}</span>
                     <span></span>
-                    <span class="preview">${escapeHtml(message.bodyPreview || '')}</span>
+                    <span class="preview">${escapeHtml(messagePreview(message))}</span>
                 `;
                 row.addEventListener('click', () => selectMessage(message.id));
                 mailList.appendChild(row);
@@ -534,16 +559,16 @@
             }
             readingPane.innerHTML = `
                 <div class="message-head">
-                    <div class="muted">${escapeHtml(formatDate(message.receivedDateTime))}</div>
+                    <div class="muted">${escapeHtml(formatDate(messageDate(message)))}</div>
                     <h1>${escapeHtml(subjectText(message))}</h1>
                     <div><strong>From:</strong> ${escapeHtml(senderName(message))} &lt;${escapeHtml(senderAddress(message))}&gt;</div>
-                    <div class="muted"><strong>To:</strong> ${escapeHtml((message.toRecipients || []).map(item => emailAddressOf(item)).filter(Boolean).join(', '))}</div>
+                    <div class="muted"><strong>To:</strong> ${escapeHtml(recipientsText(message))}</div>
                     ${message.webLink ? `<p><a class="btn" target="_blank" rel="noreferrer" href="${escapeHtml(message.webLink)}">Open in Outlook</a></p>` : ''}
                 </div>
                 <iframe id="message-frame" class="message-frame" sandbox=""></iframe>
             `;
             const frame = document.getElementById('message-frame');
-            frame.srcdoc = message.body?.content || `<p>${escapeHtml(message.bodyPreview || '')}</p>`;
+            frame.srcdoc = message.body?.content || `<p>${escapeHtml(messagePreview(message))}</p>`;
         }
 
         async function loadAccounts() {
