@@ -5,9 +5,13 @@
     body { background: #101a2b; }
     .admin-wrap { max-width: 980px; margin: 0 auto; padding: 2.25rem 1rem 4rem; }
     .admin-title { margin-bottom: 1.75rem; }
-    .admin-title h1 { font-size: 1.55rem; font-weight: 850; margin: 0 0 .35rem; }
+    .admin-title h1 { font-size: 1.85rem; font-weight: 850; margin: 0 0 .35rem; }
     .admin-title p { color: #8f9bb2; margin: 0; }
     .top-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+    .metric-card { background: #172338; border: 1px solid rgba(148, 163, 184, .14); border-radius: 14px; padding: 1rem; }
+    .metric-value { color: #f8fafc; font-size: 1.65rem; line-height: 1; font-weight: 900; margin-bottom: .35rem; }
+    .metric-label { color: #8f9bb2; font-size: .88rem; }
     .invite-panel { background: #172338; border: 1px solid rgba(59, 130, 246, .24); border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; }
     .invite-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; margin-bottom: 1rem; }
     .invite-head h2 { font-size: 1.05rem; margin: 0 0 .25rem; font-weight: 850; }
@@ -19,6 +23,7 @@
     .token-guide li { margin: .35rem 0; }
     .token-guide code { color: #f0abfc; }
     .permissions-panel { background: #172338; border: 1px solid rgba(148, 163, 184, .14); border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; }
+    .permissions-panel summary { color: #f8fafc; cursor: pointer; font-weight: 850; font-size: 1.05rem; }
     .permissions-panel h2 { font-size: 1.05rem; font-weight: 850; margin: 0 0 .25rem; }
     .permissions-panel p { color: #8f9bb2; margin: 0 0 1rem; }
     .permission-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .75rem; }
@@ -55,8 +60,8 @@
 
 <div class="admin-wrap">
     <div class="admin-title">
-        <h1>Your Mailboxes</h1>
-        <p>Select a mailbox to read emails or manage connected customer access.</p>
+        <h1>DollarHub Mail Command Center</h1>
+        <p>Manage customer mailboxes, verify Microsoft Graph tokens, and open the Outlook-style workspace.</p>
     </div>
 
     {% if error == 'missing_token' %}
@@ -80,9 +85,26 @@
         <a class="btn btn-mailbox" href="{{ url_for('company_auth.login') }}?next=admin">Connect with Microsoft</a>
         {% endif %}
         <button class="btn btn-primary" type="button" onclick="document.getElementById('connect-card').toggleAttribute('hidden')">+ Add Mailbox</button>
+        <a class="btn btn-mailbox" target="_blank" rel="noreferrer" href="{{ url_for('pages.mail') }}">Open Email Panel</a>
         <a class="btn btn-outline-secondary" href="{{ url_for('pages.settings') }}">Advanced Settings</a>
     </div>
 
+    <section class="metric-grid">
+        <article class="metric-card">
+            <div class="metric-value">{{ accounts|length }}</div>
+            <div class="metric-label">Connected mailboxes</div>
+        </article>
+        <article class="metric-card">
+            <div class="metric-value">Manual</div>
+            <div class="metric-label">Current connection mode</div>
+        </article>
+        <article class="metric-card">
+            <div class="metric-value">{% if oauth_ready %}Ready{% else %}Off{% endif %}</div>
+            <div class="metric-label">Automatic Microsoft OAuth</div>
+        </article>
+    </section>
+
+    {% if oauth_ready %}
     <section class="invite-panel">
         <div class="invite-head">
             <div>
@@ -107,6 +129,7 @@
             </div>
         </div>
     </section>
+    {% endif %}
 
     {% if not oauth_ready %}
     <div class="alert-soft">
@@ -114,8 +137,8 @@
     </div>
     {% endif %}
 
-    <section class="permissions-panel">
-        <h2>DollarHub Graph Permission Map</h2>
+    <details class="permissions-panel">
+        <summary>DollarHub Graph Permission Map</summary>
         <p>DollarHub can only use permissions already present in the token you paste. Add these in Graph Explorer or through a Microsoft app consent flow, then paste a fresh token.</p>
         <div class="permission-grid">
             {% for group in permission_groups %}
@@ -130,7 +153,7 @@
             </article>
             {% endfor %}
         </div>
-    </section>
+    </details>
 
     <section class="connect-card" id="connect-card" {% if accounts %}hidden{% endif %}>
         <form method="post" action="{{ url_for('company_auth.connect_token') }}" class="row g-3">
@@ -197,6 +220,7 @@
     const copyInvite = document.getElementById('copy-invite');
 
     function buildInviteLink() {
+        if (!inviteInput || !inviteOutput) return;
         const url = new URL('/connect', window.location.origin);
         const customer = inviteInput.value.trim();
         if (customer) {
@@ -205,15 +229,17 @@
         inviteOutput.textContent = url.toString();
     }
 
-    generateInvite.addEventListener('click', buildInviteLink);
-    inviteInput.addEventListener('input', buildInviteLink);
-    copyInvite.addEventListener('click', async () => {
+    if (generateInvite && inviteInput && copyInvite) {
+        generateInvite.addEventListener('click', buildInviteLink);
+        inviteInput.addEventListener('input', buildInviteLink);
+        copyInvite.addEventListener('click', async () => {
+            buildInviteLink();
+            await navigator.clipboard.writeText(inviteOutput.textContent);
+            copyInvite.textContent = 'Copied';
+            setTimeout(() => { copyInvite.textContent = 'Copy'; }, 1400);
+        });
         buildInviteLink();
-        await navigator.clipboard.writeText(inviteOutput.textContent);
-        copyInvite.textContent = 'Copied';
-        setTimeout(() => { copyInvite.textContent = 'Copy'; }, 1400);
-    });
-    buildInviteLink();
+    }
 
     const statusPanel = document.getElementById('status-panel');
     const statusContent = document.getElementById('status-content');

@@ -63,7 +63,7 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNavDropdown">
-                <ul class="navbar-nav">
+                <ul class="navbar-nav align-items-xl-center gap-xl-1">
                     <li class="nav-item">
                         <a class="nav-link" href="{{url_for('pages.admin')}}">Admin</a>
                     </li>
@@ -72,106 +72,34 @@
                     </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            Tokens
+                            Advanced
                         </a>
-                        <ul class="dropdown-menu">
+                        <ul class="dropdown-menu dropdown-menu-xl-end">
+                            <li><h6 class="dropdown-header">Token vault</h6></li>
                             <li><a class="dropdown-item" href="{{url_for('pages.access_tokens')}}">Access Tokens</a></li>
                             <li><a class="dropdown-item" href="{{url_for('pages.refresh_tokens')}}">Refresh Tokens</a></li>
-                            <li><a class="dropdown-item" href="{{url_for('pages.device_certificates')}}">Device Certificates</a></li>
-                            <li><a class="dropdown-item" href="{{url_for('pages.primary_refresh_tokens')}}">Primary Refresh Tokens</a></li>
-                            <li><a class="dropdown-item" href="{{url_for('pages.winhello_keys')}}">WinHello Keys</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            Authentication
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{url_for('pages.device_codes')}}">Device Codes</a></li>
-                            <li><a class="dropdown-item" href="{{url_for('pages.mfa')}}">MFA Methods</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            Custom
-                        </a>
-                        <ul class="dropdown-menu">
+                            <li><hr class="dropdown-divider"></li>
+                            <li><h6 class="dropdown-header">Microsoft Graph tools</h6></li>
                             <li><a class="dropdown-item" href="{{url_for('pages.custom_requests')}}">Custom Requests</a></li>
-                            <li><a class="dropdown-item" href="{{url_for('pages.generic_search')}}">Generic MSGraph Search</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
-                            aria-expanded="false">
-                            Files
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{url_for('pages.recent_files')}}">Recent Files</a></li>
-                            <li><a class="dropdown-item" href="{{url_for('pages.shared_with_me')}}">Files Shared With Me</a></li>
-                            <li><a class="dropdown-item" href="{{url_for('pages.onedrive')}}">OneDrive</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            SharePoint
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{url_for('pages.sharepoint_sites')}}">SharePoint Sites</a></li>
-                            <li><a class="dropdown-item" href="{{url_for('pages.sharepoint_drives')}}">SharePoint Drives</a></li>
-                            <li><a class="dropdown-item" href="{{url_for('pages.sharepoint')}}">SharePoint Files</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            Outlook
-                        </a>
-                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{url_for('pages.generic_search')}}">Graph Search</a></li>
                             <li><a class="dropdown-item" href="{{url_for('pages.outlook')}}">Outlook Web</a></li>
                             <li><a class="dropdown-item" href="{{url_for('pages.outlook_graph')}}">Outlook Graph</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{url_for('pages.teams')}}">Teams</a>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            Entra ID
-                        </a>
-                        <ul class="dropdown-menu">
+                            <li><hr class="dropdown-divider"></li>
+                            <li><h6 class="dropdown-header">Files and directory</h6></li>
+                            <li><a class="dropdown-item" href="{{url_for('pages.recent_files')}}">Recent Files</a></li>
+                            <li><a class="dropdown-item" href="{{url_for('pages.onedrive')}}">OneDrive</a></li>
+                            <li><a class="dropdown-item" href="{{url_for('pages.sharepoint_sites')}}">SharePoint Sites</a></li>
+                            <li><a class="dropdown-item" href="{{url_for('pages.sharepoint')}}">SharePoint Files</a></li>
+                            <li><a class="dropdown-item" href="{{url_for('pages.teams')}}">Teams</a></li>
                             <li><a class="dropdown-item" href="{{url_for('pages.entra_users')}}">Users</a></li>
                             <li><a class="dropdown-item" href="{{url_for('pages.entra_groups')}}">Groups</a></li>
                             <li><a class="dropdown-item" href="{{url_for('pages.entra_roles')}}">Roles</a></li>
                         </ul>
                     </li>
-                    <li class="nav-item">
-                        <span class="d-inline-block" id="nav-azure-disabled" data-bs-toggle="popover"
-                            data-bs-trigger="hover focus" data-bs-content="Coming soon!" data-bs-placement="bottom">
-                            <a class="nav-link disabled">Azure</a>
-                        </span>
-                    </li>
-                </ul>
-            </div>
-            <div class="d-flex align-items-center order-lg-last">
-                <ul class="navbar-nav flex-row">
-                    <li class="nav-item">
-                        <a class="nav-link p-1 px-3" href="https://github.com/sponsors/RedByte1337" target="_blank"
-                            id="support-graphspy-icon" data-bs-toggle="tooltip" data-bs-placement="bottom"
-                            title="Support GraphSpy" onmouseover="this.style.color='#ff6b81'"
-                            onmouseout="this.style.color=''">
-                            <i class="fi fi-rr-heart" style="vertical-align: -0.30em; font-size: 1.25em;"></i>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" data-bs-toggle="offcanvas" href="#offcanvas-side-menu" role="button">Token Options</a>
-                    </li>
                 </ul>
             </div>
         </div>
     </nav>
-    <script>
-        const azurePopover = new bootstrap.Popover(document.getElementById('nav-azure-disabled'))
-        const supportGraphSpyTooltip = new bootstrap.Tooltip(document.getElementById('support-graphspy-icon'))
-    </script>
     <!-- Placeholders -->
     <div id="alert_placeholder"></div>
     <div id="toast_placeholder" class="toast-container position-fixed end-0 p-3"></div>
