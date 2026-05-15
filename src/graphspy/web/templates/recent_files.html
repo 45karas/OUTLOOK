@@ -1,0 +1,145 @@
+{% extends 'layout.html'%}
+
+{%block content%}
+
+<br>
+<div class="col-6">
+    <h1>Recent Files</h1>
+    <form id="recent_file_form" class="row g-3">
+        <div class="col-6">
+            <label for="access_token_id" class="form-label">Access token id *</label>
+            <div class="input-group">
+                <input type="text" id="access_token_id" name="access_token_id" class="form-control" required>
+                <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#access_token_modal" onclick="$('#access_token_modal_table').DataTable().ajax.reload(null, false)">Select...</button>
+            </div>
+        </div>
+        <div>
+            <button type="Button" class="btn btn-primary" onclick="generateTable()">Request</button>
+        </div>
+    </form>
+    <script>
+        getActiveAccessToken(document.getElementById("recent_file_form").access_token_id)
+    </script>
+</div>
+<br>
+<div>
+    <h2>Files</h2>
+    <table id="response_table" class="table table-striped" style="word-wrap: break-word; word-break: break-all; width:100%">
+        <thead>
+            <tr>
+                <th></th>
+                <th></th>
+                <th>Created</th>
+                <th>Last Modified</th>
+                <th>File Name</th>
+                <th>File Size</th>
+                <th>URL</th>
+            </tr>
+        </thead>
+    </table>
+</div>
+<script>
+    generateTable();
+    // Populate the response_table table
+    function generateTable() {
+        if ($.fn.dataTable.isDataTable("#response_table")) {
+            // If the DataTable already exists, destroy it first and remove all event handlers
+            $('#response_table').off();
+            $('#response_table').DataTable().clear().destroy();
+            $('#response_table').empty();
+        }
+        let myTable = new DataTable('#response_table', {
+            "destroy": true,
+            ajax: {
+                type: "POST",
+                url: '/api/generic_graph',
+                dataSrc: function (json) {
+                    if (json.hasOwnProperty("error")) {
+                        bootstrapAlert(`[${json.error.code}] ${json.error.message}`, "danger");
+                        return [];
+                    }
+                    return json.value
+                },
+                data: { "graph_uri": "https://graph.microsoft.com/v1.0/me/drive/recent", "access_token_id": document.getElementById("recent_file_form").access_token_id.value }
+            },
+            columns: [
+                {
+                    className: 'dt-control',
+                    orderable: false,
+                    data: null,
+                    defaultContent: '',
+                    'width': '40px'
+                },
+                {
+                    className: 'action-control',
+                    orderable: false,
+                    data: null,
+                    render: function (d, t, r) {
+                        if (r.folder) {
+                            // Folder icon
+                            return '<i class="fi fi-sr-folder-open" style="cursor: pointer"></i>'
+                        } else if (r.file) {
+                            // Download icon
+                            return '<i class="fi fi-br-download" style="cursor: pointer"></i>'
+                        }
+                        // Question mark icon
+                        return '<i class="fi fi-br-question" style="cursor: pointer"></i>'
+                    },
+                    'width': '40px'
+                },
+                {
+                    title: 'Created',
+                    data: 'createdDateTime',
+                    width: '175px'
+                },
+                {
+                    title: 'Last Modified',
+                    data: 'lastModifiedDateTime',
+                    width: '175px'
+                },
+                {
+                    title: 'File Name',
+                    data: 'name'
+                },
+                {
+                    title: 'File Size',
+                    data: 'size',
+                    width: '120px'
+                },
+                {
+                    title: 'URL',
+                    data: 'webUrl'
+                }
+            ],
+            order: [[2, 'desc']],
+            processing: true
+        })
+
+        myTable.on('click', 'td.dt-control', function (e) {
+            let tr = e.target.closest('tr');
+            let row = myTable.row(tr);
+
+            if (row.child.isShown()) {
+                // This row is already open - close it
+                row.child.hide();
+            }
+            else {
+                // Open this row
+                row.child(formatJsonCode(row.data())).show();
+                Prism.highlightAll();
+            }
+
+        });
+
+        myTable.on('click', 'td.action-control', function (e) {
+            let tr = e.target.closest('tr');
+            let row = myTable.row(tr);
+            drive_id = row.data().remoteItem.parentReference.driveId
+            item_id = row.data().id
+            access_token_id = document.getElementById("recent_file_form").access_token_id.value
+            graphDownload(drive_id, item_id, access_token_id);
+        });
+        return false;
+    }
+</script>
+{%endblock content%}

@@ -1,0 +1,339 @@
+{% extends 'layout.html'%}
+
+{%block content%}
+
+<br>
+<div class="row">
+    <div class="col-md">
+        <h1>Entra ID Roles</h1>
+        <form id="entra_roles_form">
+            <div class="row align-items-center">
+                <div class="col-auto">
+                    <div class="input-group">
+                        <label for="access_token_id" class="input-group-text">Access token id</label>
+                        <input type="text" id="access_token_id" name="access_token_id" class="form-control" required>
+                        <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#access_token_modal" onclick="$('#access_token_modal_table').DataTable().ajax.reload(null, false)">Select...</button>
+                        <button type="Button" class="btn btn-outline-primary" onclick="generateEntraRolesTable()">Reload</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+        <script>
+            $(document).ready(function () {
+                getActiveAccessToken(document.getElementById("entra_roles_form").access_token_id);
+            });
+        </script>
+    </div>
+    <div class="col-auto">
+        <div class="card" style="width: 300px;">
+            <div class="card-header">
+                <h6 class="card-title mb-0">Import Entra ID Roles</h6>
+            </div>
+            <div class="card-body">
+                <p class="card-text small text-muted">Import previously exported role assignment data from JSON file</p>
+                <div class="d-grid">
+                    <button type="button" class="btn btn-outline-success btn-sm" onclick="importRoleData()">
+                        <i class="fi fi-rr-upload"></i> Import JSON
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<br>
+<div>
+    <h2>Role Assignments Table</h2>
+    <table id="entra_id_roles_table" class="table nowrap" style="width:100%">
+    </table>
+</div>
+
+<script>
+    // Populate the entra_id_roles_table table
+    function generateEntraRolesTable(roleData = null) {
+        if ($.fn.dataTable.isDataTable("#entra_id_roles_table")) {
+            // If the DataTable already exists, destroy it first and remove all event handlers
+            $('#entra_id_roles_table').off();
+            $('#entra_id_roles_table').DataTable().clear().destroy();
+            $('#entra_id_roles_table').empty();
+        }
+        let entraRolesColumns = [
+            {
+                className: 'dt-control',
+                orderable: false,
+                data: null,
+                defaultContent: '',
+                'width': '40px'
+            },
+            {
+                title: 'Role Name',
+                data: 'roleDefinition.displayName',
+                defaultContent: ''
+            },
+            {
+                title: 'Subject',
+                data: 'subject.displayName',
+                defaultContent: ''
+            },
+            {
+                title: 'Subject Type',
+                data: 'subject.type',
+                defaultContent: ''
+            },
+            {
+                title: 'Principal Name',
+                data: 'subject.principalName',
+                defaultContent: ''
+            },
+            {
+                title: 'Assignment State',
+                data: 'assignmentState',
+                defaultContent: ''
+            },
+            {
+                title: 'Status',
+                data: 'status',
+                defaultContent: ''
+            },
+            {
+                title: 'Scoped Resource',
+                data: null,
+                render: function (d, t, r) {
+                    if (r.scopedResource && r.scopedResource.displayName) {
+                        return r.scopedResource.displayName;
+                    }
+                    return '';
+                },
+                defaultContent: ''
+            },
+            {
+                title: 'Start Date',
+                data: 'startDateTime',
+                defaultContent: ''
+            },
+            {
+                title: 'End Date',
+                data: 'endDateTime',
+                defaultContent: ''
+            },
+            {
+                title: 'Permanent',
+                data: 'isPermanent',
+                render: function (d, t, r) {
+                    return r.isPermanent ? "true" : "false";
+                },
+                defaultContent: ''
+            }
+        ];
+
+        // Initialize datatable
+        let tableConfig = {
+            columns: entraRolesColumns,
+            order: [[1, 'asc']],
+            buttons: [
+                {
+                    extend: 'colvis',
+                    text: 'Columns',
+                    columns: 'th:nth-child(n+2)'
+                },
+                {
+                    extend: 'collection',
+                    text: 'Export',
+                    autoClose: true,
+                    buttons: [
+                        {
+                            extend: 'copy',
+                            exportOptions: {
+                                columns: ':visible'
+                            }
+                        },
+                        {
+                            extend: 'csv',
+                            exportOptions: {
+                                columns: ':visible'
+                            }
+                        },
+                        {
+                            extend: 'excel',
+                            exportOptions: {
+                                columns: ':visible'
+                            }
+                        },
+                        {
+                            // download JSON file
+                            text: 'JSON',
+                            action: async function (e, dt, node, config) {
+                                let data = dt.rows().data().toArray();
+                                
+                                // Create export object with config and data
+                                let exportObject = {
+                                    config: {},
+                                    data: data
+                                };
+                                
+                                let json = JSON.stringify(exportObject, null, 2);
+                                let blob = new Blob([json], { type: 'application/json' });
+                                
+                                // Try to use File System Access API for Save As dialog
+                                if (window.showSaveFilePicker) {
+                                    try {
+                                        const fileHandle = await window.showSaveFilePicker({
+                                            suggestedName: 'entra_roles.json',
+                                            types: [{
+                                                description: 'JSON files',
+                                                accept: { 'application/json': ['.json'] }
+                                            }]
+                                        });
+                                        const writable = await fileHandle.createWritable();
+                                        await writable.write(blob);
+                                        await writable.close();
+                                    } catch (err) {
+                                        // User cancelled the dialog or error occurred, fall back to download
+                                        if (err.name !== 'AbortError') {
+                                            // Only fall back if it's not a user cancellation
+                                            let url = URL.createObjectURL(blob);
+                                            let a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = 'entra_roles.json';
+                                            a.click();
+                                            URL.revokeObjectURL(url);
+                                        }
+                                    }
+                                } else {
+                                    // Fallback for browsers that don't support File System Access API
+                                    let url = URL.createObjectURL(blob);
+                                    let a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = 'entra_roles.json';
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            layout: {
+                top2Start: 'buttons'
+            },
+            colReorder: true,
+            /*rowGroup: {
+                dataSrc: "roleDefinition.displayName"
+            },*/
+            scrollX: true,
+            fixedColumns: {
+                start: 3
+            },
+            processing: roleData ? false : true,
+            createdRow: function (row, data, dataIndex) {
+                    // Make Active role assignment rows green
+                    if (data.assignmentState === "Active") {
+                        $(row).children().addClass('bg-success-subtle').addClass('text-success-emphasis');
+                    }
+                    else if (data.assignmentState === "Eligible") {
+                        $(row).children().addClass('bg-secondary-subtle').addClass('text-secondary-emphasis');
+                    }
+                    else {
+                        $(row).children().addClass('bg-primary-subtle').addClass('text-primary-emphasis');
+                    }
+            }
+        };
+
+        // Add data source based on whether we have roleData or need to fetch it
+        if (roleData) {
+            tableConfig.data = roleData;
+        } else {
+            tableConfig.ajax = {
+                type: "GET",
+                url: `/api/get_entra_roles`,
+                data: function (d) {
+                    d.access_token_id = $("#entra_roles_form #access_token_id").val()
+                },
+                dataSrc: "",
+                error: function (xhr, status, error) {
+                    bootstrapToast("Entra ID Roles Table", xhr.responseText, "danger");
+                    entraRolesTable.clear().draw();
+                }
+            };
+        }
+
+        let entraRolesTable = new DataTable('#entra_id_roles_table', tableConfig)
+
+        entraRolesTable.on('click', 'td.dt-control', function (e) {
+            let tr = e.target.closest('tr');
+            let row = entraRolesTable.row(tr);
+
+            if (row.child.isShown()) {
+                // This row is already open - close it
+                row.child.hide();
+            }
+            else {
+                // Open this row
+                row.child(formatJsonCode(row.data())).show();
+                Prism.highlightAll();
+            }
+        });
+
+        return false;
+    }
+
+    // Import role data from JSON file
+    function importRoleData() {
+        let fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json,application/json';
+        fileInput.style.display = 'none';
+        
+        fileInput.onchange = function(event) {
+            let file = event.target.files[0];
+            if (!file) return;
+            
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    let importedJson = JSON.parse(e.target.result);
+                    
+                    let importedData, importedConfig;
+                    
+                    // Check if it's the new format with config section
+                    if (importedJson.config && importedJson.data) {
+                        importedConfig = importedJson.config;
+                        importedData = importedJson.data;
+                    } else if (Array.isArray(importedJson)) {
+                        // Legacy format - just an array
+                        importedData = importedJson;
+                        importedConfig = null;
+                    } else {
+                        bootstrapToast("Import Error", "Invalid JSON file format. Expected an object with 'config' and 'data' properties, or an array of role assignment objects.", "danger");
+                        return;
+                    }
+                    
+                    // Validate that data is an array
+                    if (!Array.isArray(importedData)) {
+                        bootstrapToast("Import Error", "Invalid JSON file format. Data must be an array of role assignment objects.", "danger");
+                        return;
+                    }
+                    
+                    // Apply config settings if available
+                    if (importedConfig) {
+                        // No config options for roles yet, but keep structure for future use
+                    }
+                    
+                    // Generate table with imported data
+                    generateEntraRolesTable(importedData);
+                    bootstrapToast("Import Success", `Successfully imported ${importedData.length} role assignment records.`, "success");
+                    
+                } catch (error) {
+                    bootstrapToast("Import Error", "Error parsing JSON file: " + error.message, "danger");
+                }
+            };
+            
+            reader.readAsText(file);
+        };
+        
+        // Trigger file picker
+        document.body.appendChild(fileInput);
+        fileInput.click();
+        document.body.removeChild(fileInput);
+    }
+</script>
+{%endblock content%}

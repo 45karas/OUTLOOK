@@ -1,0 +1,425 @@
+{% extends 'layout.html'%}
+
+{%block content%}
+
+<br>
+<div class="row">
+    <div class="col-md">
+        <h1>Entra ID Groups</h1>
+        <form id="entra_groups_form">
+            <div class="row align-items-center">
+                <div class="col-auto">
+                    <div class="input-group">
+                        <label for="access_token_id" class="input-group-text">Access token id</label>
+                        <input type="text" id="access_token_id" name="access_token_id" class="form-control" required>
+                        <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#access_token_modal" onclick="$('#access_token_modal_table').DataTable().ajax.reload(null, false)">Select...</button>
+                        <button type="Button" class="btn btn-outline-primary" onclick="generateEntraGroupsTable()">Reload</button>
+                    </div>
+                </div>
+                <div class="col-auto gy-3">
+                    <div class="row g-3">
+                        <div class="col-auto mt-0">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" id="customize_properties" class="form-check-input" role="switch">
+                                <label for="customize_properties" class="form-check-label" id="customize_properties_tooltip" data-bs-toggle="tooltip" data-bs-placement="right" data-bs-title="Customize which properties to request.">Customize Properties</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12">
+                </div>
+                <div class="col-lg-6 gy-2">
+                    <div class="input-group" style="display: none;">
+                        <label for="entra_group_properties" class="input-group-text">Properties</label>
+                        <datalist id="entra_group_properties_list">
+                            <option value="id,displayName,description,mail,mailEnabled,securityEnabled,groupTypes,onPremisesSyncEnabled,membershipRule">GraphSpy Table Only</option>
+                            <option value="id,deletedDateTime,classification,createdDateTime,creationOptions,description,displayName,expirationDateTime,groupTypes,isAssignableToRole,isManagementRestricted,mail,mailEnabled,mailNickname,membershipRule,membershipRuleProcessingState,onPremisesDomainName,onPremisesLastSyncDateTime,onPremisesNetBiosName,onPremisesProvisioningErrors,onPremisesSamAccountName,onPremisesSecurityIdentifier,onPremisesSyncEnabled,preferredDataLocation,preferredLanguage,proxyAddresses,renewedDateTime,securityEnabled,securityIdentifier,serviceProvisioningErrors,theme,uniqueName,visibility,resourceBehaviorOptions,resourceProvisioningOptions">Detailed (default)</option>
+                        </datalist>
+                        <input list="entra_group_properties_list" id="entra_group_properties" class="form-control" placeholder="id,displayName,description,...">
+                    </div>
+                </div>
+            </div>
+        </form>
+        <script>
+            $(document).ready(function () {
+                getActiveAccessToken(document.getElementById("entra_groups_form").access_token_id);
+                new bootstrap.Tooltip(document.getElementById('customize_properties_tooltip'));
+                function toggleGroupPropertiesInput() {
+                    if ($('#customize_properties').is(':checked')) {
+                        $('#entra_group_properties').parent().show();
+                    } else {
+                        $('#entra_group_properties').parent().hide();
+                    }
+                }
+                toggleGroupPropertiesInput();
+                $('#customize_properties').change(function () {
+                    toggleGroupPropertiesInput();
+                });
+            });
+        </script>
+    </div>
+    <div class="col-auto">
+        <div class="card" style="width: 300px;">
+            <div class="card-header">
+                <h6 class="card-title mb-0">Import Entra ID Groups</h6>
+            </div>
+            <div class="card-body">
+                <p class="card-text small text-muted">Import previously exported group data from JSON file</p>
+                <div class="d-grid">
+                    <button type="button" class="btn btn-outline-success btn-sm" onclick="importGroupData()">
+                        <i class="fi fi-rr-upload"></i> Import JSON
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<br>
+<div>
+    <h2>Groups Table</h2>
+    <table id="entra_id_groups_table" class="table table-striped nowrap" style="width:100%">
+    </table>
+</div>
+
+<script>
+    // Populate the entra_id_groups_table table
+    function generateEntraGroupsTable(groupData = null) {
+        if ($.fn.dataTable.isDataTable("#entra_id_groups_table")) {
+            // If the DataTable already exists, destroy it first and remove all event handlers
+            $('#entra_id_groups_table').off();
+            $('#entra_id_groups_table').DataTable().clear().destroy();
+            $('#entra_id_groups_table').empty();
+        }
+        let entraGroupsColumns = [
+            {
+                className: 'dt-control',
+                orderable: false,
+                data: null,
+                defaultContent: '',
+                'width': '40px'
+            },
+            {
+                className: 'details-control',
+                orderable: false,
+                data: null,
+                defaultContent: '<i class="fi fi-rr-member-search" style="cursor: pointer"></i>',
+                'width': '40px'
+            },
+            {
+                title:'Display Name',
+                data: 'displayName'
+            },
+            {
+                title: 'Description',
+                data: 'description'
+            },
+            {
+                title: 'Mail',
+                data: 'mail'
+            },
+            {
+                title: 'Members',
+                name: "members",
+                data: null,
+                render: function (d, t, r) {
+                    if (r.transitiveMembers && r.transitiveMembers instanceof Array) {
+                        return r.transitiveMembers.length;
+                    }
+                    return 0;
+                },
+                width: '80px'
+            },
+            {
+                title: 'Group Types',
+                data: 'groupTypes',
+                render: function (d, t, r) {
+                    // https://learn.microsoft.com/en-us/graph/api/resources/groups-overview?view=graph-rest-1.0&tabs=http#types-of-groups-supported-in-microsoft-graph
+                    // Check if groupTypes is defined
+                    if (r.groupTypes && r.groupTypes instanceof Array){
+                        // Check if groupTypes contains "Unified"
+                        if (r.groupTypes.includes("Unified")) {
+                            return "M365 Group";
+                        }
+                        // If security enabled, it's a Security Group
+                        if (r.securityEnabled === true) {
+                            return "Security Group";
+                        }
+                        // If mail enabled, but not security enabled, it's a Distribution Group
+                        if (r.mailEnabled === true) {
+                            return "Distribution Group";
+                        }
+                    }
+                    return "Unknown";
+                },
+                width: '130px'
+            },
+            {
+                title: 'Security Enabled',
+                data: 'securityEnabled',
+                width: '130px'
+            },
+            {
+                title: 'Mail Enabled',
+                data: 'mailEnabled',
+                width: '110px'
+            },
+            {
+                title: 'Dynamic',
+                data: 'membershipRule',
+                render: function (d, t, r) {
+                    if (!('membershipRule' in r)) {
+                        return "unknown";
+                    }
+                    return (r.membershipRule !== undefined && r.membershipRule !== null) ? "true" : "false";
+                },
+                width: '80px'
+            },
+            {
+                title: 'Synced',
+                data: 'onPremisesSyncEnabled',
+                render: function (d, t, r) { return 'onPremisesSyncEnabled' in r ? (r.onPremisesSyncEnabled ? "true" : "false"): "unknown" },
+                width: '70px'
+            }
+        ];
+        if ($('#customize_properties').is(':checked')) {
+            let custom_properties = $('#entra_group_properties').val().split(",");
+            for (const custom_property of custom_properties) {
+                let custom_property_clean = custom_property.trim();
+                if (custom_property_clean == "") {
+                    continue;
+                }
+                // If the property does not exist already in the columns array, then add it
+                if (entraGroupsColumns.every(column => column.data != custom_property_clean)) {
+                    entraGroupsColumns.push(
+                        {
+                            title: custom_property_clean,
+                            data: custom_property_clean,
+                            className: 'default-hide'
+                        }
+                    );
+                }
+            }
+        };
+
+        // Initialize datatable
+        let tableConfig = {
+            columns: entraGroupsColumns,
+            order: [[1, 'asc']],
+            buttons: [
+                {
+                    extend: 'colvis',
+                    text: 'Columns',
+                    columns: 'th:nth-child(n+2)'
+                },
+                {
+                    extend: 'collection',
+                    text: 'Export',
+                    autoClose: true,
+                    buttons: [
+                        {
+                            extend: 'copy',
+                            exportOptions: {
+                                columns: ':visible'
+                            }
+                        },
+                        {
+                            extend: 'csv',
+                            exportOptions: {
+                                columns: ':visible'
+                            }
+                        },
+                        {
+                            extend: 'excel',
+                            exportOptions: {
+                                columns: ':visible'
+                            }
+                        },
+                        {
+                            // download JSON file
+                            text: 'JSON',
+                            action: async function (e, dt, node, config) {
+                                let data = dt.rows().data().toArray();
+                                
+                                // Create export object with config and data
+                                let exportObject = {
+                                    config: {
+                                        customize_properties: $('#customize_properties').is(':checked'),
+                                        custom_properties: $('#customize_properties').is(':checked') ? $('#entra_group_properties').val() : null
+                                    },
+                                    data: data
+                                };
+                                
+                                let json = JSON.stringify(exportObject, null, 2);
+                                let blob = new Blob([json], { type: 'application/json' });
+                                
+                                // Try to use File System Access API for Save As dialog
+                                if (window.showSaveFilePicker) {
+                                    try {
+                                        const fileHandle = await window.showSaveFilePicker({
+                                            suggestedName: 'entra_groups.json',
+                                            types: [{
+                                                description: 'JSON files',
+                                                accept: { 'application/json': ['.json'] }
+                                            }]
+                                        });
+                                        const writable = await fileHandle.createWritable();
+                                        await writable.write(blob);
+                                        await writable.close();
+                                    } catch (err) {
+                                        // User cancelled the dialog or error occurred, fall back to download
+                                        if (err.name !== 'AbortError') {
+                                            // Only fall back if it's not a user cancellation
+                                            let url = URL.createObjectURL(blob);
+                                            let a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = 'entra_groups.json';
+                                            a.click();
+                                            URL.revokeObjectURL(url);
+                                        }
+                                    }
+                                } else {
+                                    // Fallback for browsers that don't support File System Access API
+                                    let url = URL.createObjectURL(blob);
+                                    let a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = 'entra_groups.json';
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            layout: {
+                top2Start: 'buttons'
+            },
+            colReorder: true,
+            scrollX: true,
+            fixedColumns: {
+                start: 2
+            },
+            processing: groupData ? false : true
+        };
+
+        // Add data source based on whether we have groupData or need to fetch it
+        if (groupData) {
+            tableConfig.data = groupData;
+        } else {
+            tableConfig.ajax = {
+                type: "GET",
+                url: `/api/get_entra_groups`,
+                data: function (d) {
+                    d.access_token_id = $("#entra_groups_form #access_token_id").val()
+                    if ($('#customize_properties').is(':checked')) {
+                        d.customize_properties = $('#entra_group_properties').val();
+                    } else {
+                        d.customize_properties = "id,deletedDateTime,classification,createdDateTime,creationOptions,description,displayName,expirationDateTime,groupTypes,isAssignableToRole,isManagementRestricted,mail,mailEnabled,mailNickname,membershipRule,membershipRuleProcessingState,onPremisesDomainName,onPremisesLastSyncDateTime,onPremisesNetBiosName,onPremisesProvisioningErrors,onPremisesSamAccountName,onPremisesSecurityIdentifier,onPremisesSyncEnabled,preferredDataLocation,preferredLanguage,proxyAddresses,renewedDateTime,securityEnabled,securityIdentifier,serviceProvisioningErrors,theme,uniqueName,visibility,resourceBehaviorOptions,resourceProvisioningOptions";
+                    }
+                },
+                dataSrc: "",
+                error: function (xhr, status, error) {
+                    bootstrapToast("Entra ID Groups Table", xhr.responseText, "danger");
+                    entraGroupsTable.clear().draw();
+                }
+            };
+        }
+
+        let entraGroupsTable = new DataTable('#entra_id_groups_table', tableConfig)
+
+        entraGroupsTable.on('click', 'td.dt-control', function (e) {
+            let tr = e.target.closest('tr');
+            let row = entraGroupsTable.row(tr);
+
+            if (row.child.isShown()) {
+                // This row is already open - close it
+                row.child.hide();
+            }
+            else {
+                // Open this row
+                row.child(formatJsonCode(row.data())).show();
+                Prism.highlightAll();
+            }
+        });
+
+        entraGroupsTable.on('click', 'td.details-control', function (e) {
+            let tr = e.target.closest('tr');
+            let row = entraGroupsTable.row(tr);
+            openGroupDetailsModal($("#entra_groups_form #access_token_id").val(), row.data().id);
+        });
+
+        // Hide the columns with the default-hide class
+        $('#entra_id_groups_table').DataTable().columns(".default-hide").visible(false);
+        return false;
+    }
+
+    // Import group data from JSON file
+    function importGroupData() {
+        let fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json,application/json';
+        fileInput.style.display = 'none';
+        
+        fileInput.onchange = function(event) {
+            let file = event.target.files[0];
+            if (!file) return;
+            
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    let importedJson = JSON.parse(e.target.result);
+                    
+                    let importedData, importedConfig;
+                    
+                    // Check if it's the new format with config section
+                    if (importedJson.config && importedJson.data) {
+                        importedConfig = importedJson.config;
+                        importedData = importedJson.data;
+                    } else if (Array.isArray(importedJson)) {
+                        // Legacy format - just an array
+                        importedData = importedJson;
+                        importedConfig = null;
+                    } else {
+                        bootstrapToast("Import Error", "Invalid JSON file format. Expected an object with 'config' and 'data' properties, or an array of group objects.", "danger");
+                        return;
+                    }
+                    
+                    // Validate that data is an array
+                    if (!Array.isArray(importedData)) {
+                        bootstrapToast("Import Error", "Invalid JSON file format. Data must be an array of group objects.", "danger");
+                        return;
+                    }
+                    
+                    // Apply config settings if available
+                    if (importedConfig) {
+                        // Set customize_properties checkbox and value
+                        if (importedConfig.customize_properties && importedConfig.custom_properties) {
+                            $('#customize_properties').prop('checked', true);
+                            $('#entra_group_properties').val(importedConfig.custom_properties);
+                            // Show the input field
+                            $('#entra_group_properties').parent().show();
+                        } else {
+                            $('#customize_properties').prop('checked', false);
+                            $('#entra_group_properties').parent().hide();
+                        }
+                    }
+                    
+                    // Generate table with imported data
+                    generateEntraGroupsTable(importedData);
+                    bootstrapToast("Import Success", `Successfully imported ${importedData.length} group records.`, "success");
+                    
+                } catch (error) {
+                    bootstrapToast("Import Error", "Error parsing JSON file: " + error.message, "danger");
+                }
+            };
+            
+            reader.readAsText(file);
+        };
+        
+        // Trigger file picker
+        document.body.appendChild(fileInput);
+        fileInput.click();
+        document.body.removeChild(fileInput);
+    }
+</script>
+{%endblock content%}

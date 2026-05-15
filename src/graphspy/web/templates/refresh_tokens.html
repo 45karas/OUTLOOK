@@ -1,0 +1,184 @@
+{% extends 'layout.html'%}
+
+{%block content%}
+
+<br>
+<div class="col-md-6">
+    <h1>Add Refresh Token</h1>
+    <form action="/api/add_refresh_token" method="post" class="row g-3">
+        <div>
+            <label for="refreshtoken" class="form-label"><b>Refresh token *</b></label><br>
+            <textarea type="text" id="refreshtoken" name="refreshtoken" class="form-control" rows=5 required placeholder="0..."></textarea>
+        </div>
+        <div class="col-md-6">
+            <label for="user" class="form-label">User</label>
+            <input type="text" id="user" name="user" class="form-control" placeholder="john.doe@example.com">
+        </div>
+        <div class="col-md-6">
+            <label for="tenant_domain" class="form-label">Tenant Domain/ID</label>
+            <input type="text" id="tenant_domain" name="tenant_domain" class="form-control" placeholder="example.com">
+        </div>
+        <div class="col-md-6">
+            <label for="resource" class="form-label">Resource</label>
+            <input list="resource" name="resource" class="form-control" placeholder="https://graph.microsoft.com">
+            <datalist name="resource" id="resource">
+                <option value="https://graph.microsoft.com">MSGraph</option>
+                <option value="https://graph.windows.net/">AAD Graph</option>
+                <option value="https://outlook.office365.com">Outlook</option>
+                <option value="https://api.spaces.skype.com/">MSTeams</option>
+                <option value="https://management.core.windows.net/">AzureCoreManagement</option>
+                <option value="https://management.azure.com">AzureManagement</option>
+            </datalist>
+        </div>
+        <div class="col-md-6">
+            <label for="client_id" class="form-label">Client ID</label>
+            <input list="client_id" name="client_id" class="form-control" placeholder="d3590ed6-52b3-4102-aeff-aad2292ab01c">
+            <datalist name="client_id" id="client_id">
+                <option value="d3590ed6-52b3-4102-aeff-aad2292ab01c">Microsoft Office</option>
+                <option value="1fec8e78-bce4-4aaf-ab1b-5451cc387264">Microsoft Teams</option>
+                <option value="27922004-5251-4030-b22d-91ecd9a37ea4">Outlook Mobile</option>
+                <option value="b26aadf8-566f-4478-926f-589f601d9c74">OneDrive</option>
+                <option value="d326c1ce-6cc6-4de2-bebc-4591e5e13ef0">SharePoint</option>
+                <option value="00b41c95-dab0-4487-9791-b9d2c32c80f2">Office 365 Management</option>
+                <option value="04b07795-8ddb-461a-bbee-02f9e1bf7b46">Microsoft Azure CLI</option>
+                <option value="1950a258-227b-4e31-a9cf-717495945fc2">Microsoft Azure PowerShell</option>
+            </datalist>
+        </div>
+        <div class="col-md-12">
+            <label for="description" class="form-label">Description</label>
+            <input type="text" id="description" name="description" class="form-control" placeholder="My First Token">
+        </div>
+        <div class="col-12">
+            <input type="checkbox" id="foci" name="foci" value="1" class="form-check-input">
+            <label for="foci" class="form-check-label">Family of Client ID (FOCI)?</label>
+        </div>
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">Submit</button>
+        </div>
+    </form>
+</div>
+<br>
+<div class="col-md-6">
+    <h1>Active Refresh Token</h1>
+    <form id="refresh_token_form" class="row row-cols-auto">
+        <div>
+            <label for="refresh_token_id" class="col-form-label">Active Refresh Token</label>
+        </div>
+        <div>
+            <input type="text" id="refresh_token_id" size="5" name="refresh_token_id" class="form-control">
+        </div>
+        <div>
+            <button type="Button" class="btn btn-primary" onclick="setActiveRefreshToken(refresh_token_id.value)">Set active token</button>
+        </div>
+    </form>
+</div>
+<script>
+    getActiveRefreshToken(document.getElementById("refresh_token_form").refresh_token_id);
+</script>
+<br>
+<div>
+    <h1>Refresh Tokens</h1>
+    <table id="refresh_tokens" class="table table-striped nowrap" style="table-layout: fixed; width:100%">
+    </table>
+</div>
+<script type="text/javascript" class="init">
+    // Populate the refresh_tokens table
+    let myTable = new DataTable('#refresh_tokens', {
+        ajax: {
+            url: '/api/list_refresh_tokens', dataSrc: ""
+        },
+        columns: [
+            {
+                className: 'dt-control table-control',
+                orderable: false,
+                data: null,
+                defaultContent: '',
+                'width': '40px'
+            },
+            {
+                className: 'active-control table-control',
+                orderable: false,
+                data: null,
+                defaultContent: '<i class="fi fi-br-check" style="cursor: pointer"></i>',
+                'width': '40px'
+            },
+            {
+                className: 'copy-control table-control',
+                orderable: false,
+                data: null,
+                defaultContent: '<i class="fi fi-rr-copy-alt" style="cursor: pointer"></i>',
+                'width': '40px'
+            },
+            {
+                className: 'delete-control table-control',
+                orderable: false,
+                data: null,
+                defaultContent: '<i class="fi fi-rr-trash" style="cursor: pointer"></i>',
+                'width': '40px'
+            },
+            { data: 'id', title: 'ID', 'width': '60px' },
+            { data: 'stored_at', title: 'Stored At', 'width': '170px' },
+            { data: 'user', title: 'User', 'width': '320px' },
+            { data: 'tenant_id', title: 'Tenant ID', 'width': '320px' },
+            { data: 'client_id', title: 'Client ID', 'width': '320px' },
+            { data: 'resource', title: 'Resource', 'width': '320px' },
+            { data: 'foci', title: 'Foci', 'width': '50px' },
+            { data: 'description', title: 'Description', 'width': 'auto' }
+        ],
+        order: [[4, 'desc']],
+        colReorder: {
+            columns: ':gt(3)'
+        },
+        scrollX: true,
+        fixedColumns: {
+            start: 4
+        },
+        processing: true
+    })
+
+    myTable.on('click', 'td.dt-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = myTable.row(tr);
+
+        if (row.child.isShown()) {
+            // This row is already open - close it
+            row.child.hide();
+        }
+        else {
+            // Open this row
+            row.child(format(row.data())).show();
+        }
+    });
+
+    myTable.on('click', 'td.active-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = myTable.row(tr);
+        setActiveRefreshToken(row.data().id);
+    });
+
+    myTable.on('click', 'td.copy-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = myTable.row(tr);
+        copyToClipboard(row.data().refreshtoken);
+    });
+
+    myTable.on('click', 'td.delete-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = myTable.row(tr);
+        if (!confirm("Are you sure you want to delete refresh token with ID " + row.data().id + "?")) { return }
+        deleteRefreshToken(row.data().id);
+        $('#refresh_tokens').DataTable().ajax.reload(null, false);
+    });
+
+    function format(d) {
+        var formatWrapper = $(
+            '<dl style="word-break: break-all; white-space: pre-wrap">' +
+            '<dt>Raw Token:</dt>' +
+            '</dl>'
+        );
+        var formatCode = $('<code></code>').text(d.refreshtoken);
+        formatWrapper.append($('<dd></dd>').append(formatCode));
+        return formatWrapper;
+    }
+</script>
+{%endblock content%}

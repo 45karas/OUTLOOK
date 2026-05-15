@@ -1,0 +1,10 @@
+﻿services:
+  - type: web
+    name: outlook-graphspy
+    runtime: python
+    plan: free
+    buildCommand: pip install .
+    startCommand: graphspy -i 0.0.0.0 -p $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9

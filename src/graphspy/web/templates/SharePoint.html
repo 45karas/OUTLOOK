@@ -1,0 +1,253 @@
+{% extends 'layout.html'%}
+
+{%block content%}
+
+<br>
+<div class="row g-3">
+    <div class="col-md-8">
+        <h1>SharePoint Files</h1>
+        <form id="sharepoint_form" class="row g-3">
+            <div class="input-group">
+                <label for="drive_id" class="input-group-text">Drive ID</label>
+                <input type="text" id="drive_id" name="drive_id" class="form-control" required>
+            </div>
+            <div class="input-group">
+                <label for="path" class="input-group-text">Path</label>
+                <input type="text" id="path" name="path" value="/" class="form-control" required>
+                <button type="Button" class="btn btn-outline-primary" onclick="openParentFolder()">Parent Folder</button>
+            </div>
+            <div class="col-auto">
+                <div class="input-group">
+                    <label for="access_token_id" class="input-group-text">Access token id</label>
+                    <input type="text" id="access_token_id" name="access_token_id" class="form-control" required>
+                    <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#access_token_modal" onclick="$('#access_token_modal_table').DataTable().ajax.reload(null, false)">Select...</button>
+                </div>
+            </div>
+            <div class="col-auto">
+                <button type="Button" class="btn btn-primary" onclick="generateTable()">Browse</button>
+            </div>
+        </form>
+        <script>
+            getActiveAccessToken(document.getElementById("sharepoint_form").access_token_id)
+        </script>
+    </div>
+    <div class="col-lg-4">
+        <h2 style="margin-bottom: 18px">Upload file</h2>
+        <form id="upload_form" class="row g-3">
+            <div class="input-group">
+                <input type="file" id="file" name="file" class="form-control" required>
+                <button id="upload_button" type="button" class="btn btn-outline-primary" onclick="uploadFile()">
+                    <span id="upload_spinner" class="spinner-border spinner-border-sm" aria-hidden="true" style="display: none;"></span>
+                    <span id="upload_text">Upload</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<br>
+
+<div>
+    <h2>Files Table</h2>
+    <table id="response_table" class="table table-striped" style="word-wrap: break-word; word-break: break-all; width:100%">
+        <thead>
+            <tr>
+                <th></th>
+                <th></th>
+                <th></th>
+                <th>Created</th>
+                <th>Last Modified</th>
+                <th>File Name</th>
+                <th>File Size</th>
+                <th>URL</th>
+            </tr>
+        </thead>
+    </table>
+</div>
+<script>
+    // If the URL contains a driveId parameter, it will automatically be filled in and the table will auto generate
+    function setDriveId() {
+        let params = (new URL(document.location)).searchParams;
+        if (!params.has("driveId")) { return }
+        document.getElementById("sharepoint_form").drive_id.value = params.get("driveId");
+        if (getCookie("access_token_id")) {
+            generateTable()
+        }
+    };
+    setDriveId()
+    // Populate the response_table table
+    function generateTable() {
+        // Remove potential trailing slashes in path
+        var temp_path = document.getElementById("sharepoint_form").path.value
+        if (temp_path.slice(-1) == '/' && temp_path != "/") {
+            document.getElementById("sharepoint_form").path.value = temp_path.slice(0, -1)
+        }
+        if ($.fn.dataTable.isDataTable("#response_table")) {
+            // If the DataTable already exists, just reload it
+            $('#response_table').DataTable().ajax.reload(null, false);
+        } else {
+            // Initialize datatable
+            let myTable = new DataTable('#response_table', {
+                ajax: {
+                    type: "POST",
+                    url: '/api/generic_graph',
+                    dataSrc: function (json) {
+                        if (json.hasOwnProperty("error")) {
+                            bootstrapAlert(`[${json.error.code}] ${json.error.message}`, "danger");
+                            return [];
+                        }
+                        return json.value
+                    },
+                    data: function (d) {
+                        d.graph_uri = "https://graph.microsoft.com/v1.0/drives/" + document.getElementById("sharepoint_form").drive_id.value + "/root:/" + document.getElementById("sharepoint_form").path.value + ":/children",
+                        d.access_token_id = document.getElementById("sharepoint_form").access_token_id.value
+                    }
+                },
+                columns: [
+                    {
+                        className: 'dt-control',
+                        orderable: false,
+                        data: null,
+                        defaultContent: '',
+                        'width': '40px'
+                    },
+                    {
+                        className: 'action-control',
+                        orderable: false,
+                        data: null,
+                        render: function (d, t, r) {
+                            if (r.folder) {
+                                // Folder icon
+                                return '<i class="fi fi-sr-folder-open" style="cursor: pointer"></i>'
+                            } else if (r.file) {
+                                // Download icon
+                                return '<i class="fi fi-br-download" style="cursor: pointer"></i>'
+                            }
+                            // Question mark icon
+                            return '<i class="fi fi-br-question" style="cursor: pointer"></i>'
+                        },
+                        'width': '40px'
+                    },
+                    {
+                        className: 'delete-control',
+                        orderable: false,
+                        data: null,
+                        defaultContent: '<i class="fi fi-rr-trash" style="cursor: pointer"></i>',
+                        'width': '40px'
+                    },
+                    {
+                        data: 'createdDateTime',
+                        width: '175px'
+                    },
+                    {
+                        data: 'lastModifiedDateTime',
+                        width: '175px'
+                    },
+                    { data: 'name' },
+                    {
+                        data: 'size',
+                        width: '120px'
+                    },
+                    { data: 'webUrl' }
+                ],
+                processing: true
+            })
+
+
+            myTable.on('click', 'td.dt-control', function (e) {
+                let tr = e.target.closest('tr');
+                let row = myTable.row(tr);
+
+                if (row.child.isShown()) {
+                    // This row is already open - close it
+                    row.child.hide();
+                }
+                else {
+                    // Open this row
+                    row.child(formatJsonCode(row.data())).show();
+                    Prism.highlightAll();
+                }
+
+            });
+
+            myTable.on('click', 'td.action-control', function (e) {
+                let tr = e.target.closest('tr');
+                let row = myTable.row(tr);
+                //debugger;
+                if (row.data().folder) {
+                    // This is a folder
+                    folder_name = row.data().name
+                    openFolder(folder_name);
+                } else if (row.data().file) {
+                    // This is a file
+                    drive_id = row.data().parentReference.driveId
+                    item_id = row.data().id
+                    access_token_id = document.getElementById("sharepoint_form").access_token_id.value
+                    graphDownload(drive_id, item_id, access_token_id);
+                } else {
+                    alert("No action defined for this type of entity.")
+                }
+            });
+
+            myTable.on('click', 'td.delete-control', function (e) {
+                let tr = e.target.closest('tr');
+                let row = myTable.row(tr);
+                let item_type = row.data().folder ? "folder" : "file";
+                if (!confirm(`Are you sure you want to delete the ${item_type} '${row.data().name}'?`)) { return; };
+                let drive_id = row.data().parentReference.driveId;
+                let item_id = row.data().id;
+                let access_token_id = document.getElementById("sharepoint_form").access_token_id.value;
+                graphDelete(drive_id, item_id, access_token_id, function () {
+                    $('#response_table').DataTable().ajax.reload(null, false);
+                });
+            });
+        }
+
+        return false;
+    }
+
+    function openFolder(folder_name) {
+        // Make sure the last character of the path is a '/' before appending the folder name
+        if (document.getElementById("sharepoint_form").path.value.slice(-1) != '/') {
+            document.getElementById("sharepoint_form").path.value += "/"
+        }
+        document.getElementById("sharepoint_form").path.value += folder_name
+        $('#response_table').DataTable().ajax.reload(null, false);
+    }
+
+    function openParentFolder() {
+        // Make sure the last character of the path is a '/' before appending the folder name
+        var temp_path = document.getElementById("sharepoint_form").path.value
+        if (temp_path.slice(-1) == '/') {
+            temp_path = temp_path.slice(0, -1)
+        }
+        temp_path = temp_path.split('/').slice(0, -1).join("/")
+        if (temp_path == '') {
+            temp_path = "/"
+        }
+        document.getElementById("sharepoint_form").path.value = temp_path
+        $('#response_table').DataTable().ajax.reload(null, false);
+    }
+
+    function uploadFile() {
+        let file = document.getElementById("file").files[0];
+        if (!file) {
+            bootstrapToast("Upload File", "No file selected to upload yet!", "warning");
+            return;
+        }
+        let path = document.getElementById("sharepoint_form").path.value;
+        let access_token_id = document.getElementById("sharepoint_form").access_token_id.value;
+        let drive_id = document.getElementById("sharepoint_form").drive_id.value;
+
+        $("#upload_form #upload_spinner").show();
+        $("#upload_form #upload_text").text(" Uploading");
+        $("#upload_form #upload_button").addClass("disabled");
+        graphUpload(drive_id, path, file, access_token_id, function () {
+            // Delay to ensure the file is uploaded
+            generateTable();
+            $("#upload_form #upload_spinner").hide();
+            $("#upload_form #upload_text").text("Upload");
+            $("#upload_form #upload_button").removeClass("disabled");
+        });
+    }
+</script>
+{%endblock content%}

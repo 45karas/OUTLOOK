@@ -1,0 +1,122 @@
+<!-- Refresh Token Modal -->
+<div class="modal fade" id="refresh_token_modal" tabindex="-1" aria-labelledby="refresh_token_modal_label" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="refresh_token_modal_label">Refresh Tokens</h1>
+                <div style="float: right">
+                    <i class="fi fi-br-expand px-3" id="expand-icon" style="cursor: pointer; float: left; opacity: 0.5"></i>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div id="dTable" class="box-body table-responsive" style="padding:10px;">
+                    <table id="refresh_token_modal_table" class="table table-striped nowrap" style="width:100%">
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script type="text/javascript" class="init">
+    // Populate the refresh_token_modal_table table
+    let refreshTokenModalTable = new DataTable('#refresh_token_modal_table', {
+        ajax: {
+            url: '/api/list_refresh_tokens', dataSrc: ""
+        },
+        columns: [
+            {
+                className: 'dt-control',
+                orderable: false,
+                data: null,
+                defaultContent: '',
+                'width': '40px'
+            },
+            {
+                className: 'active-control',
+                orderable: false,
+                data: null,
+                defaultContent: '<i class="fi fi-br-check" style="cursor: pointer"></i>',
+                'width': '40px'
+            },
+            {
+                className: 'copy-control',
+                orderable: false,
+                data: null,
+                defaultContent: '<i class="fi fi-rr-copy-alt" style="cursor: pointer"></i>',
+                'width': '40px'
+            },
+            {
+                className: 'delete-control',
+                orderable: false,
+                data: null,
+                defaultContent: '<i class="fi fi-rr-trash" style="cursor: pointer"></i>',
+                'width': '40px'
+            },
+            { data: 'id', title: 'ID', 'width': '60px' },
+            { data: 'stored_at', title: 'Stored At', 'width': '170px' },
+            { data: 'user', title: 'User', 'width': '320px' },
+            { data: 'tenant_id', title: 'Tenant ID', 'width': '320px' },
+            { data: 'client_id', title: 'Client ID', 'width': '320px' },
+            { data: 'resource', title: 'Resource', 'width': '320px' },
+            { data: 'foci', title: 'Foci', 'width': '50px' },
+            { data: 'description', title: 'Description', 'width': 'auto' }
+        ],
+        order: [[4, 'desc']]
+    })
+
+    refreshTokenModalTable.on('click', 'td.dt-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = refreshTokenModalTable.row(tr);
+
+        if (row.child.isShown()) {
+            // This row is already open - close it
+            row.child.hide();
+        }
+        else {
+            // Open this row
+            row.child(formatRefreshToken(row.data())).show();
+        }
+    });
+
+    refreshTokenModalTable.on('click', 'td.active-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = refreshTokenModalTable.row(tr);
+        setActiveRefreshToken(row.data().id);
+        $('#refresh_token_modal').modal('hide');
+    });
+
+    refreshTokenModalTable.on('click', 'td.copy-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = refreshTokenModalTable.row(tr);
+        copyToClipboard(row.data().refreshtoken);
+    });
+
+    refreshTokenModalTable.on('click', 'td.delete-control', function (e) {
+        let tr = e.target.closest('tr');
+        let row = refreshTokenModalTable.row(tr);
+        if (!confirm("Are you sure you want to delete refresh token with ID " + row.data().id + "?")) { return }
+        deleteRefreshToken(row.data().id);
+        $('#refresh_token_modal_table').DataTable().ajax.reload(null, false);
+    });
+
+    function formatRefreshToken(d) {
+        // `d` is the original data object for the row
+        var formatWrapper = $(
+            '<dl style="word-break: break-all; white-space: pre-wrap">' +
+            '<dt>Raw Token:</dt>' +
+            '</dl>'
+        );
+        var formatCode = $('<code></code>').text(d.refreshtoken);
+        formatWrapper.append($('<dd></dd>').append(formatCode));
+        return formatWrapper;
+    }
+
+    $("#refresh_token_modal").on('click', 'i#expand-icon', function (e) {
+        $("#refresh_token_modal .modal-dialog").toggleClass('modal-xl').toggleClass('modal-fullscreen')
+        $("#refresh_token_modal i#expand-icon").toggleClass('fi-br-expand').toggleClass('fi-br-compress')
+    })
+</script>
