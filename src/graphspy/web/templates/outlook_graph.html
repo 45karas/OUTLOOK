@@ -96,7 +96,7 @@
                     <button type="button" id="compose_email_btn" class="btn btn-primary" style="white-space: nowrap;">
                         <i class="fi fi-rr-pencil" style="vertical-align: -0.15em"></i> New Email
                     </button>
-                    <a href="/api/owa_login" target="_blank" class="btn btn-outline-secondary ms-2" style="white-space: nowrap;" title="Open Outlook Web Access in a new tab">
+                    <a href="https://outlook.office365.com/owa/" target="_blank" class="btn btn-outline-secondary ms-2" style="white-space: nowrap;" title="Open Outlook Web Access in a new tab">
                         <i class="fi fi-rr-globe" style="vertical-align: -0.15em"></i> OWA
                     </a>
                     <button type="button" id="load_more_btn" class="btn btn-outline-secondary ms-2" style="white-space: nowrap; display: none;">
@@ -357,6 +357,28 @@
         }
 
         return `[${code}] ${message}`;
+    }
+
+    /**
+     * Extract a meaningful error message from a jQuery AJAX error response.
+     * Tries responseText first (server error message), then status text.
+     */
+    function getXhrErrorMessage(xhr, status, error) {
+        if (xhr && xhr.responseText) {
+            try {
+                const resp = JSON.parse(xhr.responseText);
+                if (resp && resp.message) return resp.message;
+                if (resp && resp.error) {
+                    const e = resp.error;
+                    return typeof e === 'string' ? e : (e.message || e.code || JSON.stringify(e));
+                }
+            } catch (_) {
+                // responseText is not JSON, use it as-is if short enough
+                const txt = xhr.responseText.trim();
+                if (txt && txt.length < 200) return txt;
+            }
+        }
+        return error || status || 'Unknown error';
     }
 
     /**
@@ -771,8 +793,9 @@
                 }
             },
             error: function(xhr, status, error) {
-                bootstrapAlert(`Failed to fetch emails: ${error}`, "danger");
-                setMailboxStatus(`Failed to fetch emails: ${error}`, "danger");
+                const msg = getXhrErrorMessage(xhr, status, error);
+                bootstrapAlert(`Failed to fetch emails: ${msg}`, "danger");
+                setMailboxStatus(`Failed to fetch emails: ${msg}`, "danger");
             },
             complete: function() {
                 if (reset) {
@@ -1128,8 +1151,9 @@
                 fetchEmails(true, true);
             },
             error: function(xhr, status, error) {
-                bootstrapAlert(`Failed to load folders: ${error}`, "danger");
-                setMailboxStatus(`Failed to load folders: ${error}`, "danger");
+                const msg = getXhrErrorMessage(xhr, status, error);
+                bootstrapAlert(`Failed to load folders: ${msg}`, "danger");
+                setMailboxStatus(`Failed to load folders: ${msg}`, "danger");
             },
             complete: function() {
                 // Reset button state
