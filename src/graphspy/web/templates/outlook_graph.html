@@ -96,6 +96,9 @@
                     <button type="button" id="compose_email_btn" class="btn btn-primary" style="white-space: nowrap;">
                         <i class="fi fi-rr-pencil" style="vertical-align: -0.15em"></i> New Email
                     </button>
+                    <a href="/api/owa_login" target="_blank" class="btn btn-outline-secondary ms-2" style="white-space: nowrap;" title="Open Outlook Web Access in a new tab">
+                        <i class="fi fi-rr-globe" style="vertical-align: -0.15em"></i> OWA
+                    </a>
                     <button type="button" id="load_more_btn" class="btn btn-outline-secondary ms-2" style="white-space: nowrap; display: none;">
                         Load More
                     </button>
@@ -205,10 +208,12 @@
         // Hide the attachments section initially
         $('#email_attachments').hide();
         
-        // Load user folders if an access token is already selected
-        if ($('#access_token_id').val()) {
-            loadFolders();
-        }
+        // Auto-ensure we have a valid graph.microsoft.com token before loading mail
+        ensureGraphToken(function() {
+            if ($('#access_token_id').val()) {
+                loadFolders();
+            }
+        });
   
         // Add toggle event handler
         $('#light_background_switch').on('change', function() {
@@ -325,6 +330,9 @@
         const lower = `${code} ${message}`.toLowerCase();
 
         if (lower.includes("invalidauthenticationtoken") || lower.includes("expired") || lower.includes("invalid token")) {
+            if (lower.includes("audience") || lower.includes("aud")) {
+                return "Token audience mismatch. Your token is for a different resource (e.g., outlook.office365.com). Reload the page to auto-refresh to graph.microsoft.com, or manually create a Graph token.";
+            }
             return "The selected token is expired or invalid. Select a fresh token and reload the mailbox.";
         }
 
@@ -349,6 +357,128 @@
         }
 
         return `[${code}] ${message}`;
+    }
+
+    /**
+     * Ensure the active access token is valid for Microsoft Graph API.
+     * If the token is missing, expired, or has the wrong audience, automatically
+     * refresh using the active refresh token to get a graph.microsoft.com token.
+     * @param {function} callback - Called after token is validated/refreshed.
+     */
+    function ensureGraphToken(callback) {
+        const tokenId = $('#access_token_id').val();
+        if (!tokenId || tokenId === '0') {
+            // No active token — try to auto-refresh from the active refresh token
+            setMailboxStatus("No active access token. Attempting auto-refresh to Graph...", "muted");
+            autoRefreshToGraph(function(success) {
+                if (success) {
+                    setMailboxStatus("Auto-refreshed to Graph token. Loading mailbox...", "success");
+                } else {
+                    setMailboxStatus("Select an access token and reload the mailbox.", "warning");
+                }
+                if (callback) callback();
+            });
+            return;
+        }
+
+        // Decode the active token to check audience and expiry
+        $.ajax({
+            type: "GET",
+            url: `/api/decode_token/${tokenId}`,
+            success: function(response) {
+                const decoded = typeof response === 'string' ? JSON.parse(response) : response;
+                const aud = decoded.aud || '';
+                const exp = decoded.exp || 0;
+                const now = Math.floor(Date.now() / 1000);
+                const isGraphToken = aud === 'https://graph.microsoft.com';
+                const isExpired = exp > 0 && exp <= now;
+
+                if (isGraphToken && !isExpired) {
+                    // Token is good for Graph — proceed
+                    if (callback) callback();
+                    return;
+                }
+
+                let reason = '';
+                if (!isGraphToken && isExpired) {
+                    reason = 'expired and not for Graph';
+                } else if (!isGraphToken) {
+                    reason = `for "${aud}" (need graph.microsoft.com)`;
+                } else {
+                    reason = 'expired';
+                }
+
+                setMailboxStatus(`Access token ${reason}. Auto-refreshing to Graph...`, "muted");
+                bootstrapToast("Mail", `Token ${reason}. Auto-refreshing to Microsoft Graph...`, "info");
+
+                autoRefreshToGraph(function(success) {
+                    if (success) {
+                        setMailboxStatus("Auto-refreshed to Graph token. Loading mailbox...", "success");
+                    } else {
+                        setMailboxStatus("Auto-refresh failed. Please manually refresh a token for graph.microsoft.com.", "danger");
+                    }
+                    if (callback) callback();
+                });
+            },
+            error: function() {
+                setMailboxStatus("Unable to decode token. Trying auto-refresh...", "warning");
+                autoRefreshToGraph(function(success) {
+                    if (callback) callback();
+                });
+            }
+        });
+    }
+
+    /**
+     * Use the active refresh token to get a fresh access token for Microsoft Graph.
+     * @param {function} callback - Called with (success: boolean).
+     */
+    function autoRefreshToGraph(callback) {
+        // Get active refresh token ID
+        let rtResponse = $.ajax({
+            type: "GET",
+            async: false,
+            url: "/api/active_refresh_token"
+        });
+        const refreshTokenId = rtResponse.responseText;
+        if (!refreshTokenId || refreshTokenId === '0') {
+            setMailboxStatus("No refresh token available. Please add a refresh token and refresh to graph.microsoft.com.", "danger");
+            bootstrapToast("Mail", "No active refresh token. Visit Tokens → Refresh Tokens to add one, then refresh to graph.microsoft.com.", "warning");
+            if (callback) callback(false);
+            return;
+        }
+
+        // Refresh to get a graph.microsoft.com access token
+        $.ajax({
+            type: "POST",
+            url: "/api/refresh_to_access_token",
+            data: {
+                refresh_token_id: refreshTokenId,
+                client_id: "d3590ed6-52b3-4102-aeff-aad2292ab01c",
+                resource: "https://graph.microsoft.com",
+                scope: "",
+                api_version: 1
+            },
+            success: function(response) {
+                const newTokenId = response;
+                if (newTokenId && newTokenId !== '0') {
+                    // Activate the new token
+                    setActiveAccessToken(newTokenId, true);
+                    bootstrapToast("Mail", `Auto-refreshed to Graph access token #${newTokenId}`, "success");
+                    if (callback) callback(true);
+                } else {
+                    bootstrapToast("Mail", "Refresh returned no new token. Check your refresh token is valid.", "danger");
+                    if (callback) callback(false);
+                }
+            },
+            error: function(xhr) {
+                const errText = xhr.responseText || 'Unknown error';
+                const shortErr = errText.length > 200 ? errText.substring(0, 200) + '...' : errText;
+                setMailboxStatus(`Auto-refresh failed: ${shortErr}`, "danger");
+                bootstrapToast("Mail", `Auto-refresh failed. Manually refresh to graph.microsoft.com in Tokens → Access Tokens.`, "danger");
+                if (callback) callback(false);
+            }
+        });
     }
 
     function configureAutoRefresh() {

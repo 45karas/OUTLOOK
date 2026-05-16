@@ -20,6 +20,8 @@ def owa_login():
 
     Query params:
         access_token_id (optional) — Use this token instead of the active one.
+        client_id (optional) — Override the client ID (default: Microsoft Office).
+        resource (optional) — Override the resource (default: https://outlook.office365.com).
 
     Tries a silent SSO redirect through login.microsoftonline.com with
     prompt=none. If the browser has an active Microsoft session, the user
@@ -61,12 +63,16 @@ def owa_login():
     elif "@" in unique_name and "live.com#" in unique_name:
         domain = unique_name.split("@")[1]
 
+    # Allow overriding client_id and resource via query params
+    client_id = request.args.get("client_id", "d3590ed6-52b3-4102-aeff-aad2292ab01c")
+    resource = request.args.get("resource", "https://outlook.office365.com")
+
     # Build silent SSO URL: prompt=none tries silent auth if browser has session
     params = {
         "response_type": "id_token",
-        "client_id": "d3590ed6-52b3-4102-aeff-aad2292ab01c",
+        "client_id": client_id,
         "redirect_uri": "https://outlook.office365.com/owa/",
-        "resource": "https://outlook.office365.com",
+        "resource": resource,
         "prompt": "none",
         "response_mode": "form_post",
     }
