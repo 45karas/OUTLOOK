@@ -31,16 +31,29 @@ GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
 def _graph_get(uri: str, access_token_id: int) -> dict:
     """Make an authenticated GET request to MS Graph and return parsed JSON."""
-    return json.loads(
+    data = json.loads(
         gspy_requests.graph_request(f"{GRAPH_BASE}{uri}", access_token_id, method="GET")
     )
+    _check_graph_error(data)
+    return data
 
 
 def _graph_post(uri: str, access_token_id: int, body: dict) -> dict:
     """Make an authenticated POST request to MS Graph."""
-    return json.loads(
+    data = json.loads(
         gspy_requests.graph_request(f"{GRAPH_BASE}{uri}", access_token_id, method="POST", body=body)
     )
+    _check_graph_error(data)
+    return data
+
+
+def _check_graph_error(data: dict):
+    """Raise ValueError if the Graph response contains an error."""
+    http_status = data.pop("_http_status", None)
+    if "error" in data:
+        err = data["error"]
+        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        raise ValueError(f"Graph API error (HTTP {http_status}): {msg}")
 
 
 def _graph_delete(uri: str, access_token_id: int) -> bool:

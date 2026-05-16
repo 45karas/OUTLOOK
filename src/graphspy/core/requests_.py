@@ -76,9 +76,20 @@ def graph_request(
         method, graph_uri, headers=headers, **({"json": body} if body else {})
     )
     try:
-        return json.dumps(response.json())
+        result = response.json()
     except ValueError:
-        return response.text or ""
+        result = {
+            "error": {
+                "code": f"HTTP {response.status_code}",
+                "message": response.text or f"Empty response body (status {response.status_code})"
+            }
+        }
+    # Ensure result is always a dict so callers don't crash on .get()
+    if not isinstance(result, dict):
+        result = {"value": result}
+    # Attach HTTP status so callers can inspect it
+    result["_http_status"] = response.status_code
+    return json.dumps(result)
 
 
 def graph_upload_request(upload_uri: str, access_token_id: int, file) -> tuple:
