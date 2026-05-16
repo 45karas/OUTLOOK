@@ -68,13 +68,14 @@ def save_access_token(accesstoken: str, description: str, captured_from_device_c
     decoded = jwt.decode(accesstoken, options={"verify_signature": False})
     idtyp = decoded.get("idtyp")
     if idtyp == "user":
-        user = decoded.get("unique_name") or decoded.get("upn") or "unknown"
+        user = decoded.get("email") or decoded.get("upn") or decoded.get("unique_name") or "unknown"
     elif idtyp == "app":
         user = decoded.get("app_displayname") or decoded.get("appid") or "unknown"
     else:
         user = (
-            decoded.get("unique_name")
+            decoded.get("email")
             or decoded.get("upn")
+            or decoded.get("unique_name")
             or decoded.get("app_displayname")
             or decoded.get("oid")
             or "unknown"
@@ -212,7 +213,7 @@ def refresh_to_access_token(
         decoded = jwt.decode(access_token, options={"verify_signature": False})
         idtyp = decoded.get("idtyp")
         if idtyp == "user":
-            user = decoded.get("unique_name") or decoded.get("upn") or "unknown"
+            user = decoded.get("email") or decoded.get("upn") or decoded.get("unique_name") or "unknown"
         elif idtyp == "app":
             user = decoded.get("app_displayname") or decoded.get("appid") or "unknown"
         else:

@@ -3,7 +3,6 @@
 """API endpoints for OWA (Outlook Web Access) token-based login."""
 
 # Built-in imports
-import base64
 import json
 
 # External library imports
@@ -17,17 +16,18 @@ bp = Blueprint("owa", __name__)
 
 @bp.get("/api/owa_login")
 def owa_login():
-    """Generate an OWA login URL that injects the active or specified access token.
-    
+    """Redirect to OWA with silent SSO attempt using the access token.
+
     Query params:
         access_token_id (optional) — Use this token instead of the active one.
-    
-    Returns a redirect to OWA with the token embedded.
+
+    Tries a silent SSO redirect through login.microsoftonline.com with
+    prompt=none. If the browser has an active Microsoft session, the user
+    lands in OWA automatically. Otherwise they see the normal login page.
     """
     token_id = request.args.get("access_token_id")
 
     if not token_id:
-        # Try active token
         row = connection.query_db(
             "SELECT value FROM settings WHERE setting = 'active_access_token_id'",
             one=True,
@@ -45,15 +45,39 @@ def owa_login():
     if not access_token:
         return f"[Error] Access token {token_id} not found", 404
 
+    import jwt as jwt_lib
     token_str = access_token[0]
-    encoded_token = base64.b64encode(token_str.encode()).decode()
+    decoded = jwt_lib.decode(token_str, options={"verify_signature": False})
 
-    # Build OWA login URL with injected token
-    # Uses the Azure AD token-based login approach
-    owa_url = (
-        "https://outlook.office365.com/owa/?token={}".format(encoded_token)
-    )
-    return redirect(owa_url)
+    # Extract user info from token for login_hint
+    email = decoded.get("email") or decoded.get("upn") or ""
+    unique_name = decoded.get("unique_name") or ""
+    tid = decoded.get("tid", "")
+
+    # Extract domain from email or unique_name for domain_hint
+    domain = ""
+    if "@" in email:
+        domain = email.split("@")[1]
+    elif "@" in unique_name and "live.com#" in unique_name:
+        domain = unique_name.split("@")[1]
+
+    # Build silent SSO URL: prompt=none tries silent auth if browser has session
+    params = {
+        "response_type": "id_token",
+        "client_id": "d3590ed6-52b3-4102-aeff-aad2292ab01c",
+        "redirect_uri": "https://outlook.office365.com/owa/",
+        "resource": "https://outlook.office365.com",
+        "prompt": "none",
+        "response_mode": "form_post",
+    }
+    if email:
+        params["login_hint"] = email
+    if domain:
+        params["domain_hint"] = domain
+
+    from urllib.parse import urlencode
+    auth_url = f"https://login.microsoftonline.com/common/oauth2/authorize?{urlencode(params)}"
+    return redirect(auth_url)
 
 
 @bp.post("/api/owa_login_token")

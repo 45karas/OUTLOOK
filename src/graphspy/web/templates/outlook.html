@@ -4,7 +4,7 @@
 
 <br>
 <div class="col-md-6">
-    <h1>Outlook</h1>
+    <h1>Outlook Web Access</h1>
     <form id="access_token_form" class="row g-3">
         <div class="col-md-6">
             <div class="input-group">
@@ -15,16 +15,13 @@
         </div>
     </form>
     <br>
-    <form id="outlook_form" action="https://outlook.office365.com/owa/" method="POST" target="_blank" class="row g-3">
-        <div>
-            <label for="id_token" class="form-label">Access Token *</label>
-            <textarea type="text" id="id_token" name="id_token" class="form-control" rows=5 required placeholder="eyJ..."></textarea>
+    <div class="row g-3">
+        <div class="col-md-12">
+            <p class="text-muted">Opens Outlook Web Access in a new tab. If you have an active Microsoft session in your browser, you'll be signed in automatically. Otherwise, sign in with the target account.</p>
+            <button type="button" class="btn btn-primary" onclick="openOWA()">Open Outlook (OWA)</button>
+            <button type="button" class="btn btn-outline-secondary ms-1" onclick="window.open('https://outlook.office365.com/owa/', '_blank')">Open OWA Directly</button>
         </div>
-        <div>
-            <input type="hidden" id="code" name="code" value="anything">
-            <button type="submit" class="btn btn-primary" id="submit">Open outlook</button>
-        </div>
-    </form>
+    </div>
     <script>
         function fillAccessToken(form) {
             let response = $.ajax({
@@ -32,10 +29,17 @@
                 async: false,
                 url: "/api/get_access_token/" + form.access_token_id.value
             });
-            document.getElementById("outlook_form").id_token.value = JSON.parse(response.responseText).accesstoken
+            // Just validates and stores; OWA uses server-side redirect
         };
+        function openOWA() {
+            const tokenId = document.getElementById("access_token_id").value;
+            if (!tokenId) {
+                bootstrapAlert("Please select or enter an access token ID", "warning");
+                return;
+            }
+            window.open("/api/owa_login?access_token_id=" + encodeURIComponent(tokenId), "_blank");
+        }
         getActiveAccessToken(document.getElementById("access_token_form").access_token_id)
-        fillAccessToken(document.getElementById("access_token_form"))
     </script>
 </div>
 {%endblock content%}
