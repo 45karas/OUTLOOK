@@ -53,9 +53,26 @@ def _graph_delete(uri: str, access_token_id: int) -> bool:
     return resp.status_code in (200, 204)
 
 
-def list_mail_folders(access_token_id: int) -> list[dict]:
-    """List all mail folders for the authenticated user."""
-    data = _graph_get("/me/mailFolders?$top=50", access_token_id)
+def _graph_patch(access_token_id: int, uri: str, body: dict) -> dict:
+    """Make an authenticated PATCH request to MS Graph."""
+    token = _get_access_token(access_token_id)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    resp = gspy_requests.patch(
+        f"https://graph.microsoft.com/v1.0{uri}",
+        headers=headers,
+        json=body,
+    )
+    if resp.status_code == 200:
+        return resp.json()
+    return {"error": {"code": resp.status_code, "message": resp.text}}
+
+
+def list_mail_folders(access_token_id: int, mailbox: str = "me") -> list[dict]:
+    """List all mail folders for the authenticated user or shared mailbox."""
+    data = _graph_get(f"/{mailbox}/mailFolders?$top=100&includeHiddenFolders=true&$select=id,displayName,totalItemCount,unreadItemCount", access_token_id)
     folders = data.get("value", [])
 
     # Sort: well-known folders first, then alphabetical
@@ -83,13 +100,17 @@ def list_messages(
     skip: int = 0,
     search: str = "",
     order_by: str = "receivedDateTime desc",
+    mailbox: str = "me",
 ) -> dict:
     """List messages in a folder with pagination and optional search.
 
     Returns:
         dict with keys: messages (list), count (total), skip, top
     """
-    base_uri = f"/me/mailFolders/{folder_id}/messages"
+    if folder_id == "__all__":
+        base_uri = f"/{mailbox}/messages"
+    else:
+        base_uri = f"/{mailbox}/mailFolders/{folder_id}/messages"
     params = [f"$top={top}", f"$skip={skip}"]
 
     if search:
@@ -135,7 +156,7 @@ def list_messages(
     }
 
 
-def get_message(access_token_id: int, message_id: str) -> dict:
+def get_message(access_token_id: int, message_id: str, mailbox: str = "me") -> dict:
     """Get full details of a single message including body."""
     select_fields = (
         "id,subject,body,from,toRecipients,ccRecipients,bccRecipients,"
@@ -143,7 +164,7 @@ def get_message(access_token_id: int, message_id: str) -> dict:
         "internetMessageId,conversationId,parentFolderId,webLink,categories,"
         "attachments"
     )
-    uri = f"/me/messages/{message_id}?$select={select_fields}&$expand=attachments"
+    uri = f"/{mailbox}/messages/{message_id}?$select={select_fields}&$expand=attachments"
     msg = _graph_get(uri, access_token_id)
 
     sender = msg.get("from", {}).get("emailAddress", {})
@@ -203,6 +224,7 @@ def send_message(
     content_type: str = "HTML",
     importance: str = "normal",
     save_to_sent: bool = True,
+    mailbox: str = "me",
 ) -> dict:
     """Send an email via Microsoft Graph.
 
@@ -238,27 +260,27 @@ def send_message(
         message["bccRecipients"] = _recipients(bcc_recipients)
 
     payload = {"message": message, "saveToSentItems": str(save_to_sent).lower()}
-    _graph_post("/me/sendMail", access_token_id, payload)
+    _graph_post(f"/{mailbox}/sendMail", access_token_id, payload)
     logger.info(f"Email sent: '{subject}' to {len(to_recipients)} recipient(s)")
     return {"success": True, "subject": subject, "recipient_count": len(to_recipients)}
 
 
-def delete_message(access_token_id: int, message_id: str) -> bool:
+def delete_message(access_token_id: int, message_id: str, mailbox: str = "me") -> bool:
     """Move a message to Deleted Items."""
-    success = _graph_delete(f"/me/messages/{message_id}", access_token_id)
+    success = _graph_delete(f"/{mailbox}/messages/{message_id}", access_token_id)
     if success:
         logger.debug(f"Deleted message {message_id}")
     return success
 
 
-def search_messages(access_token_id: int, query: str, top: int = 50) -> dict:
+def search_messages(access_token_id: int, query: str, top: int = 50, mailbox: str = "me") -> dict:
     """Search messages across all folders."""
     select_fields = (
         "id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,"
         "importance,bodyPreview,parentFolderId,webLink"
     )
     uri = (
-        f"/me/messages?$search=\"{query}\"&$top={top}"
+        f"/{mailbox}/messages?$search=\"{query}\"&$top={top}"
         f"&$select={select_fields}&$orderby=receivedDateTime desc"
     )
     data = _graph_get(uri, access_token_id)
@@ -282,7 +304,7 @@ def search_messages(access_token_id: int, query: str, top: int = 50) -> dict:
     return {"messages": messages, "count": len(messages), "query": query}
 
 
-def mark_as_read(access_token_id: int, message_id: str) -> bool:
+def mark_as_read(access_token_id: int, message_id: str, mailbox: str = "me") -> bool:
     """Mark a message as read."""
     token = _get_access_token(access_token_id)
     headers = {
@@ -291,7 +313,7 @@ def mark_as_read(access_token_id: int, message_id: str) -> bool:
     }
     body = {"isRead": True}
     resp = gspy_requests.patch(
-        f"https://graph.microsoft.com/v1.0/me/messages/{message_id}",
+        f"https://graph.microsoft.com/v1.0/{mailbox}/messages/{message_id}",
         headers=headers,
         json=body,
     )
@@ -304,22 +326,21 @@ def reply_message(
     body: str,
     content_type: str = "HTML",
     reply_all: bool = False,
+    mailbox: str = "me",
 ) -> dict:
-    """Reply to a message."""
-    endpoint = "/me/messages/{}/createReplyAll" if reply_all else "/me/messages/{}/createReply"
+    """Reply to a message (creates draft reply, does not send)."""
+    endpoint = f"/{mailbox}/messages/{message_id}/createReplyAll" if reply_all else f"/{mailbox}/messages/{message_id}/createReply"
     payload = {
         "message": {
             "body": {"contentType": content_type, "content": body},
         }
     }
-    result = _graph_post(
-        endpoint.format(message_id), access_token_id, payload
-    )
+    result = _graph_post(endpoint, access_token_id, payload)
     logger.info(f"Replied to message {message_id}")
     return {"success": True, "message_id": result.get("id", "")}
 
 
-def move_message(access_token_id: int, message_id: str, destination_folder_id: str) -> dict:
+def move_message(access_token_id: int, message_id: str, destination_folder_id: str, mailbox: str = "me") -> dict:
     """Move a message to a different folder."""
     token = _get_access_token(access_token_id)
     headers = {
@@ -328,7 +349,7 @@ def move_message(access_token_id: int, message_id: str, destination_folder_id: s
     }
     body = {"destinationId": destination_folder_id}
     resp = gspy_requests.post(
-        f"https://graph.microsoft.com/v1.0/me/messages/{message_id}/move",
+        f"https://graph.microsoft.com/v1.0/{mailbox}/messages/{message_id}/move",
         headers=headers,
         json=body,
     )
@@ -336,3 +357,143 @@ def move_message(access_token_id: int, message_id: str, destination_folder_id: s
         result = resp.json()
         return {"success": True, "new_id": result.get("id", message_id)}
     return {"success": False, "error": resp.text}
+
+
+def toggle_flag(access_token_id: int, message_id: str, flagged: bool, mailbox: str = "me") -> dict:
+    """Toggle the flag status of a message."""
+    flag_status = "flagged" if flagged else "notFlagged"
+    result = _graph_patch(
+        access_token_id,
+        f"/{mailbox}/messages/{message_id}",
+        {"flag": {"flagStatus": flag_status}},
+    )
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+    new_flag = result.get("flag", {})
+    return {"success": True, "flagged": new_flag.get("flagStatus") == "flagged"}
+
+
+def permanent_delete(access_token_id: int, message_id: str, mailbox: str = "me") -> bool:
+    """Permanently delete a message (bypasses Deleted Items)."""
+    token = _get_access_token(access_token_id)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    resp = gspy_requests.post(
+        f"https://graph.microsoft.com/v1.0/{mailbox}/messages/{message_id}/permanentDelete",
+        headers=headers,
+        json={},
+    )
+    return resp.status_code in (200, 204)
+
+
+def send_draft(access_token_id: int, message_id: str, mailbox: str = "me") -> bool:
+    """Send a previously created draft message."""
+    token = _get_access_token(access_token_id)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    resp = gspy_requests.post(
+        f"https://graph.microsoft.com/v1.0/{mailbox}/messages/{message_id}/send",
+        headers=headers,
+        json={},
+    )
+    return resp.status_code in (200, 202)
+
+
+def get_attachments(access_token_id: int, message_id: str, mailbox: str = "me") -> list[dict]:
+    """Get attachments for a message."""
+    data = _graph_get(
+        f"/{mailbox}/messages/{message_id}/attachments", access_token_id
+    )
+    attachments = []
+    for att in data.get("value", []):
+        attachments.append({
+            "id": att.get("id", ""),
+            "name": att.get("name", "Unknown"),
+            "content_type": att.get("contentType", ""),
+            "size": att.get("size", 0),
+            "is_inline": att.get("isInline", False),
+            "content_bytes": att.get("contentBytes", ""),
+        })
+    return attachments
+
+
+def mark_as_unread(access_token_id: int, message_id: str, mailbox: str = "me") -> bool:
+    """Mark a message as unread."""
+    token = _get_access_token(access_token_id)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    body = {"isRead": False}
+    resp = gspy_requests.patch(
+        f"https://graph.microsoft.com/v1.0/{mailbox}/messages/{message_id}",
+        headers=headers,
+        json=body,
+    )
+    return resp.status_code == 200
+
+
+def upload_attachment(
+    access_token_id: int,
+    message_id: str,
+    attachment_name: str,
+    attachment_content_type: str,
+    content_bytes: str,
+    mailbox: str = "me",
+) -> dict:
+    """Upload a file attachment to a draft message.
+    
+    Args:
+        content_bytes: Base64-encoded file content (without data URI prefix).
+    """
+    body = {
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        "name": attachment_name,
+        "contentType": attachment_content_type,
+        "contentBytes": content_bytes,
+    }
+    return _graph_post(
+        f"/{mailbox}/messages/{message_id}/attachments",
+        access_token_id,
+        body,
+    )
+
+
+def create_draft(
+    access_token_id: int,
+    to_recipients: list[dict],
+    subject: str,
+    body: str,
+    cc_recipients: list[dict] = None,
+    bcc_recipients: list[dict] = None,
+    content_type: str = "HTML",
+    importance: str = "normal",
+    mailbox: str = "me",
+) -> dict:
+    """Create a draft message. Returns the draft message object including its ID."""
+    def _recipients(rcpt_list):
+        if not rcpt_list:
+            return []
+        return [
+            {"emailAddress": {"address": r.get("email", r.get("address", "")),
+                              "name": r.get("name", "")}}
+            for r in rcpt_list
+        ]
+
+    message = {
+        "subject": subject,
+        "body": {"contentType": content_type, "content": body},
+        "toRecipients": _recipients(to_recipients),
+        "importance": importance,
+    }
+    if cc_recipients:
+        message["ccRecipients"] = _recipients(cc_recipients)
+    if bcc_recipients:
+        message["bccRecipients"] = _recipients(bcc_recipients)
+
+    result = _graph_post(f"/{mailbox}/messages", access_token_id, message)
+    return result
