@@ -26,17 +26,20 @@ def _get_access_token(access_token_id: int) -> str:
     return row[0]
 
 
+GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+
 def _graph_get(uri: str, access_token_id: int) -> dict:
     """Make an authenticated GET request to MS Graph and return parsed JSON."""
     return json.loads(
-        gspy_requests.graph_request(uri, access_token_id, method="GET")
+        gspy_requests.graph_request(f"{GRAPH_BASE}{uri}", access_token_id, method="GET")
     )
 
 
 def _graph_post(uri: str, access_token_id: int, body: dict) -> dict:
     """Make an authenticated POST request to MS Graph."""
     return json.loads(
-        gspy_requests.graph_request(uri, access_token_id, method="POST", body=body)
+        gspy_requests.graph_request(f"{GRAPH_BASE}{uri}", access_token_id, method="POST", body=body)
     )
 
 
@@ -48,7 +51,7 @@ def _graph_delete(uri: str, access_token_id: int) -> bool:
         "Content-Type": "application/json",
     }
     resp = gspy_requests.delete(
-        f"https://graph.microsoft.com/v1.0{uri}", headers=headers
+        f"{GRAPH_BASE}{uri}", headers=headers
     )
     return resp.status_code in (200, 204)
 
@@ -61,7 +64,7 @@ def _graph_patch(access_token_id: int, uri: str, body: dict) -> dict:
         "Content-Type": "application/json",
     }
     resp = gspy_requests.patch(
-        f"https://graph.microsoft.com/v1.0{uri}",
+        f"{GRAPH_BASE}{uri}",
         headers=headers,
         json=body,
     )

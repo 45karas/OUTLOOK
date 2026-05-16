@@ -20,7 +20,7 @@ from .prt import (
     request_for_device,
     refresh_to_access_token as prt_refresh_to_access_token,
 )
-from .tokens import parse_token_endpoint_error, save_access_token, save_refresh_token
+from .tokens import parse_token_endpoint_error, save_access_token, save_refresh_token, _resolve_user_via_graph
 from .winhello import register as register_winhello
 
 
@@ -146,6 +146,16 @@ def poll(app) -> None:
                     )
                 else:
                     user = "unknown"
+
+                # Resolve real identity via Graph /me (fixes live.com#... for personal accounts)
+                resolved_user = _resolve_user_via_graph(access_token)
+                if resolved_user:
+                    user = resolved_user
+                    connection.execute_db(
+                        "UPDATE accesstokens SET user = ? WHERE id = ?",
+                        (resolved_user, access_token_id),
+                    )
+
                 refresh_token_id = save_refresh_token(
                     response.json()["refresh_token"],
                     f"Created using device code auth ({row['user_code']})",

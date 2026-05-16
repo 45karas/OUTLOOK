@@ -106,10 +106,9 @@ def get_me():
     """Get current user's email / profile info."""
     try:
         token_id = _get_token_id()
-        from ..core import requests_ as gspy_requests
         mailbox = _get_mailbox()
-        resp = gspy_requests.graph_request(f"/{mailbox}", token_id, method="GET")
-        return resp
+        data = outlook._graph_get(f"/{mailbox}", token_id)
+        return data
     except ValueError as e:
         return str(e), 400
     except Exception as e:

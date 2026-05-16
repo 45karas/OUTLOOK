@@ -31,6 +31,30 @@ def is_valid_uuid(val) -> bool:
         return False
 
 
+def _resolve_user_via_graph(access_token: str) -> str | None:
+    """Call MS Graph /me to get the real userPrincipalName or mail.
+    Falls back to displayName. Returns None on any failure.
+    This avoids the 'live.com#...' JWT claim for personal accounts."""
+    try:
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": ua.get(),
+        }
+        resp = gspy_requests.get(
+            "https://graph.microsoft.com/v1.0/me?$select=userPrincipalName,mail,displayName",
+            headers=headers,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            resolved = data.get("userPrincipalName") or data.get("mail") or data.get("displayName")
+            if resolved:
+                logger.debug(f"Resolved user identity via Graph /me: {resolved}")
+                return resolved
+    except Exception as exc:
+        logger.debug(f"Could not resolve user via Graph /me: {exc}")
+    return None
+
+
 def get_tenant_id(tenant_domain: str) -> str:
     headers = {"User-Agent": ua.get()}
     response = gspy_requests.get(
@@ -58,7 +82,7 @@ def save_access_token(accesstoken: str, description: str, captured_from_device_c
     logger.debug(
         f"Saving access token for user '{user}', resource '{decoded.get('aud', 'unknown')}': {description}"
     )
-    return connection.execute_db(
+    token_id = connection.execute_db(
         "INSERT INTO accesstokens (stored_at, issued_at, expires_at, description, user, resource, accesstoken, captured_from_device_code) VALUES (?,?,?,?,?,?,?,?)",
         (
             f"{datetime.now()}".split(".")[0],
@@ -71,6 +95,18 @@ def save_access_token(accesstoken: str, description: str, captured_from_device_c
             captured_from_device_code,
         ),
     )
+
+    # Try to resolve better user identity via Graph /me
+    # (JWT unique_name often returns 'live.com#...' for personal accounts)
+    resolved_user = _resolve_user_via_graph(accesstoken)
+    if resolved_user and resolved_user != user:
+        connection.execute_db(
+            "UPDATE accesstokens SET user = ? WHERE id = ?",
+            (resolved_user, token_id),
+        )
+        logger.debug(f"Updated access token {token_id} user: '{user}' -> '{resolved_user}'")
+
+    return token_id
 
 
 def save_refresh_token(
@@ -181,6 +217,11 @@ def refresh_to_access_token(
             user = decoded.get("app_displayname") or decoded.get("appid") or "unknown"
         else:
             user = "unknown"
+
+        # Resolve real identity via Graph /me (fixes live.com#... for personal accounts)
+        resolved_user = _resolve_user_via_graph(access_token)
+        if resolved_user:
+            user = resolved_user
 
         # Determine refresh token expiry from response or JWT
         rt_response = response.json()
