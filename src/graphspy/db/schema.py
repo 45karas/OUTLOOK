@@ -7,10 +7,10 @@ import sqlite3
 def init_db(db_path: str) -> None:
     con = sqlite3.connect(db_path)
     con.execute(
-        "CREATE TABLE accesstokens (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, issued_at TEXT, expires_at TEXT, description TEXT, user TEXT, resource TEXT, accesstoken TEXT)"
+        "CREATE TABLE accesstokens (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, issued_at TEXT, expires_at TEXT, description TEXT, user TEXT, resource TEXT, accesstoken TEXT, captured_from_device_code INTEGER)"
     )
     con.execute(
-        "CREATE TABLE refreshtokens (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, description TEXT, user TEXT, tenant_id TEXT, client_id TEXT, resource TEXT, foci INTEGER, refreshtoken TEXT)"
+        "CREATE TABLE refreshtokens (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at TEXT, description TEXT, user TEXT, tenant_id TEXT, client_id TEXT, resource TEXT, foci INTEGER, refreshtoken TEXT, expires_at INTEGER, superseded_by INTEGER, auto_refresh INTEGER DEFAULT 1, captured_from_device_code INTEGER)"
     )
     con.execute(
         "CREATE TABLE devicecodes (id INTEGER PRIMARY KEY AUTOINCREMENT, generated_at INTEGER, expires_at INTEGER, user_code TEXT, device_code TEXT, interval INTEGER, client_id TEXT, status TEXT"
@@ -35,6 +35,6 @@ def init_db(db_path: str) -> None:
         "CREATE TABLE winhello_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, stored_at INTEGER, key_id TEXT, device_id TEXT, user TEXT, priv_key TEXT)"
     )
     con.execute("CREATE TABLE settings (setting TEXT UNIQUE, value TEXT)")
-    con.execute("INSERT INTO settings (setting, value) VALUES ('schema_version', '6')")
+    con.execute("INSERT INTO settings (setting, value) VALUES ('schema_version', '8')")
     con.commit()
     con.close()

@@ -40,7 +40,7 @@ def get_tenant_id(tenant_domain: str) -> str:
     return response.json()["authorization_endpoint"].split("/")[3]
 
 
-def save_access_token(accesstoken: str, description: str) -> int:
+def save_access_token(accesstoken: str, description: str, captured_from_device_code: int = None) -> int:
     decoded = jwt.decode(accesstoken, options={"verify_signature": False})
     idtyp = decoded.get("idtyp")
     if idtyp == "user":
@@ -59,7 +59,7 @@ def save_access_token(accesstoken: str, description: str) -> int:
         f"Saving access token for user '{user}', resource '{decoded.get('aud', 'unknown')}': {description}"
     )
     return connection.execute_db(
-        "INSERT INTO accesstokens (stored_at, issued_at, expires_at, description, user, resource, accesstoken) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO accesstokens (stored_at, issued_at, expires_at, description, user, resource, accesstoken, captured_from_device_code) VALUES (?,?,?,?,?,?,?,?)",
         (
             f"{datetime.now()}".split(".")[0],
             datetime.fromtimestamp(decoded["iat"]) if "iat" in decoded else "unknown",
@@ -68,6 +68,7 @@ def save_access_token(accesstoken: str, description: str) -> int:
             user,
             decoded.get("aud", "unknown"),
             accesstoken,
+            captured_from_device_code,
         ),
     )
 
@@ -80,6 +81,9 @@ def save_refresh_token(
     resource: str,
     foci: int,
     client_id: str = "d3590ed6-52b3-4102-aeff-aad2292ab01c",
+    expires_at: int = None,
+    auto_refresh: int = 1,
+    captured_from_device_code: int = None,
 ) -> int:
     logger.debug(
         f"Saving refresh token for user '{user}', tenant '{tenant}': {description}"
@@ -94,7 +98,7 @@ def save_refresh_token(
             else get_tenant_id(tenant)
         )
     return connection.execute_db(
-        "INSERT INTO refreshtokens (stored_at, description, user, tenant_id, client_id, resource, foci, refreshtoken) VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO refreshtokens (stored_at, description, user, tenant_id, client_id, resource, foci, refreshtoken, expires_at, auto_refresh, captured_from_device_code) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (
             f"{datetime.now()}".split(".")[0],
             description,
@@ -104,6 +108,9 @@ def save_refresh_token(
             resource,
             foci_int,
             refreshtoken,
+            expires_at,
+            auto_refresh,
+            captured_from_device_code,
         ),
     )
 
@@ -174,13 +181,97 @@ def refresh_to_access_token(
             user = decoded.get("app_displayname") or decoded.get("appid") or "unknown"
         else:
             user = "unknown"
-        save_refresh_token(
-            response.json()["refresh_token"],
+
+        # Determine refresh token expiry from response or JWT
+        rt_response = response.json()
+        rt_expires_at = None
+        if "refresh_token_expires_in" in rt_response:
+            rt_expires_at = int(datetime.now().timestamp()) + int(rt_response["refresh_token_expires_in"])
+        elif "expires_in" in rt_response:
+            # Some endpoints return expires_in for the RT as well
+            rt_expires_at = int(datetime.now().timestamp()) + int(rt_response["expires_in"])
+        elif "expires_on" in rt_response:
+            rt_expires_at = int(rt_response["expires_on"])
+
+        new_rt_id = save_refresh_token(
+            rt_response["refresh_token"],
             f"Created using refresh token {refresh_token_id}",
             user,
             tenant_id,
-            response.json().get("resource", "unknown"),
-            response.json().get("foci", 0),
+            rt_response.get("resource", "unknown"),
+            rt_response.get("foci", 0),
             client_id,
+            expires_at=rt_expires_at,
+        )
+        # Mark the old refresh token as superseded by the new one
+        connection.execute_db(
+            "UPDATE refreshtokens SET superseded_by = ? WHERE id = ?",
+            (new_rt_id, refresh_token_id),
+        )
+        logger.debug(
+            f"Refresh token {refresh_token_id} superseded by {new_rt_id}"
         )
     return access_token_id
+
+
+def get_latest_refresh_token_id(refresh_token_id: int) -> int:
+    """Follow the superseded_by chain to find the latest refresh token."""
+    current_id = refresh_token_id
+    visited = set()
+    while current_id not in visited:
+        visited.add(current_id)
+        row = connection.query_db(
+            "SELECT superseded_by FROM refreshtokens WHERE id = ?",
+            [current_id],
+            one=True,
+        )
+        if not row or row[0] is None:
+            return current_id
+        current_id = row[0]
+    return current_id
+
+
+def get_access_token_expiry(access_token_id: int) -> int | None:
+    """Return the Unix timestamp when an access token expires, or None."""
+    row = connection.query_db(
+        "SELECT expires_at FROM accesstokens WHERE id = ?",
+        [access_token_id],
+        one=True,
+    )
+    if not row or not row[0]:
+        return None
+    try:
+        return int(datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").timestamp())
+    except (ValueError, TypeError):
+        return None
+
+
+def find_refresh_token_for_access(access_token_id: int) -> int | None:
+    """Find a refresh token that was created alongside or for this access token.
+    Looks for refresh tokens whose description references this access token ID,
+    or tokens for the same user/resource that aren't superseded."""
+    access_row = connection.query_db(
+        "SELECT user, resource FROM accesstokens WHERE id = ?",
+        [access_token_id],
+        one=True,
+    )
+    if not access_row:
+        return None
+    user, resource = access_row
+
+    # Try description-based match first (tokens created via refresh_to_access_token)
+    row = connection.query_db(
+        "SELECT id FROM refreshtokens WHERE description LIKE ? AND superseded_by IS NULL LIMIT 1",
+        [f"%{access_token_id}%"],
+        one=True,
+    )
+    if row:
+        return row[0]
+
+    # Fallback: find any active refresh token for same user and resource
+    row = connection.query_db(
+        "SELECT id FROM refreshtokens WHERE user = ? AND resource = ? AND superseded_by IS NULL AND auto_refresh = 1 ORDER BY id DESC LIMIT 1",
+        [user, resource],
+        one=True,
+    )
+    return row[0] if row else None

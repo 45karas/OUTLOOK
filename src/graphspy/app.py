@@ -26,10 +26,13 @@ def create_app(db_path: str, db_folder: str, proxy: str | None = None) -> Flask:
         devices,
         entra,
         mfa,
+        outlook,
+        owa,
         refresh_tokens,
         requests_,
         settings,
         teams,
+        token_health,
     )
     from .web import pages
 
@@ -40,10 +43,13 @@ def create_app(db_path: str, db_folder: str, proxy: str | None = None) -> Flask:
         devices,
         entra,
         mfa,
+        outlook,
+        owa,
         refresh_tokens,
         requests_,
         settings,
         teams,
+        token_health,
         pages,
     ]:
         app.register_blueprint(module.bp)
@@ -61,6 +67,11 @@ def create_app(db_path: str, db_folder: str, proxy: str | None = None) -> Flask:
         return jsonify({"message": e.message}), e.status_code
 
     app.teardown_appcontext(connection.close)
+
+    # Start the token auto-refresh background thread
+    from .core.refresh_manager import refresh_manager
+    refresh_manager.init_app(app)
+    refresh_manager.start()
 
     # Suppress Werkzeug's request logging (duplicate timestamps);
     # requests are logged via after_request above.
