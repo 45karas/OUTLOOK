@@ -307,7 +307,10 @@
                 return
             }
             access_token_info = JSON.parse(response_a.responseText);
-            $('#access_token_info_user').text(access_token_info.email || access_token_info.unique_name);
+            // Prefer upn (work/school), then email, then unique_name (strip live.com# prefix)
+            let userName = access_token_info.upn || access_token_info.email || access_token_info.unique_name || '';
+            userName = userName.replace(/^live\.com#/, '');
+            $('#access_token_info_user').text(userName);
             $('#access_token_info_resource').text(access_token_info.aud);
             $('#resource_input_side').val(access_token_info.aud);
             $('#access_token_info_clientid').text(access_token_info.appid);

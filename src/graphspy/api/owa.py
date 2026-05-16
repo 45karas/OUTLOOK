@@ -51,17 +51,15 @@ def owa_login():
     token_str = access_token[0]
     decoded = jwt_lib.decode(token_str, options={"verify_signature": False})
 
-    # Extract user info from token for login_hint
-    email = decoded.get("email") or decoded.get("upn") or ""
-    unique_name = decoded.get("unique_name") or ""
+    # Extract user info from token for login_hint — prefer upn (work), then email, then unique_name
+    email = decoded.get("upn") or decoded.get("email") or decoded.get("unique_name") or ""
+    email = email.replace("live.com#", "")
     tid = decoded.get("tid", "")
 
-    # Extract domain from email or unique_name for domain_hint
+    # Extract domain from email for domain_hint
     domain = ""
     if "@" in email:
         domain = email.split("@")[1]
-    elif "@" in unique_name and "live.com#" in unique_name:
-        domain = unique_name.split("@")[1]
 
     # Allow overriding client_id and resource via query params
     client_id = request.args.get("client_id", "d3590ed6-52b3-4102-aeff-aad2292ab01c")
